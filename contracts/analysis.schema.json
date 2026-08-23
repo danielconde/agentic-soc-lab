@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-soc-lab.local/schemas/analysis.schema.json",
+  "title": "Agentic SOC Initial Analysis",
+  "description": "Canonical structure for the initial SOC analysis produced by the LLM.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "analysis_version",
+    "alert_id",
+    "summary",
+    "observed_evidence",
+    "hypotheses",
+    "risk_assessment",
+    "missing_evidence",
+    "preliminary_verdict",
+    "confidence",
+    "recommended_investigations"
+  ],
+  "properties": {
+    "analysis_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "alert_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "observed_evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "hypotheses": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "risk_assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "level",
+        "reasoning"
+      ],
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical",
+            "unknown"
+          ]
+        },
+        "reasoning": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "missing_evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "preliminary_verdict": {
+      "type": "string",
+      "enum": [
+        "benign",
+        "suspicious",
+        "malicious",
+        "inconclusive"
+      ]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "recommended_investigations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
