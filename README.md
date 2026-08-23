@@ -90,11 +90,14 @@ El archivo `.env` contiene configuración local y **no debe subirse al repositor
 
 La guía completa está disponible en:
 
-- [`docs/01-instalacion.md`](docs/01-instalacion.md)
-Instalación de WSL2, Docker Desktop, n8n, Ollama, Qwen y aceleración GPU.
+1. [`docs/01-instalacion.md`](docs/01-instalacion.md)  
+   WSL2, Docker Desktop, n8n, Ollama, Qwen y aceleración GPU.
 
-- [`docs/02-conexion-n8n-ollama.md`](docs/02-conexion-n8n-ollama.md)
-Integración y validación de la comunicación entre n8n, Ollama y Qwen3 8B.
+2. [`docs/02-conexion-n8n-ollama.md`](docs/02-conexion-n8n-ollama.md)  
+   Integración n8n -> Ollama -> Qwen3 8B.
+
+3. [`docs/03-normalizacion-alertas.md`](docs/03-normalizacion-alertas.md)  
+   Contrato canónico de alertas, normalización de entidades y validación de entradas.
 
 ## Roadmap técnico
 
