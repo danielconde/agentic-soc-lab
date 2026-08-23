@@ -1,0 +1,37 @@
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: agentic-soc-n8n
+    restart: unless-stopped
+    ports:
+      - "${N8N_PORT}:5678"
+    environment:
+      - TZ=${TZ}
+      - GENERIC_TIMEZONE=${TZ}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n/workflows:/workflows
+    networks:
+      - soc_network
+    depends_on:
+      - ollama
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: agentic-soc-ollama
+    restart: unless-stopped
+    ports:
+      - "${OLLAMA_PORT}:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - soc_network
+
+volumes:
+  n8n_data:
+  ollama_data:
+
+networks:
+  soc_network:
+    driver: bridge
