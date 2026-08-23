@@ -1,0 +1,181 @@
+{
+  "name": "03 - Initial LLM Analysis",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -112,
+        0
+      ],
+      "id": "47c80f82-b147-484f-a544-cb13c8e6ea01",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    json: {\n      id: \"ALERT-0001\",\n      name: \"Impossible travel detected\",\n      description: \"User authenticated from geographically distant locations within an unusual time window.\",\n      severity: \"High\",\n\n      vendor: \"Microsoft\",\n      product: \"Microsoft Defender XDR\",\n\n      category: \"Identity\",\n\n      timestamp: \"2026-08-23T17:30:00Z\",\n\n      user: \"john.doe@example.com\",\n      host: \"WIN11-LAPTOP-01\",\n\n      source_ip: \"185.220.101.20\",\n      destination_ip: \"20.190.128.25\",\n\n      additional_data: {\n        country_a: \"Spain\",\n        country_b: \"Netherlands\",\n        authentication_method: \"MFA\",\n        device_managed: false\n      }\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        48,
+        0
+      ],
+      "id": "dc8dece9-3c77-4490-a9ef-7ded2d042be4",
+      "name": "Manual Alert Input"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json;\n\n// -----------------------------\n// Helper functions\n// -----------------------------\n\nfunction normalizeSeverity(value) {\n  if (!value) return \"unknown\";\n\n  const severity = String(value).toLowerCase().trim();\n\n  const severityMap = {\n    info: \"informational\",\n    informational: \"informational\",\n    low: \"low\",\n    medium: \"medium\",\n    moderate: \"medium\",\n    high: \"high\",\n    critical: \"critical\",\n    severe: \"critical\"\n  };\n\n  return severityMap[severity] || \"unknown\";\n}\n\nfunction normalizeCategory(value) {\n  if (!value) return \"unknown\";\n\n  const category = String(value).toLowerCase().trim();\n\n  const categoryMap = {\n    identity: \"identity\",\n    iam: \"identity\",\n    authentication: \"identity\",\n\n    endpoint: \"endpoint\",\n    edr: \"endpoint\",\n    host: \"endpoint\",\n\n    network: \"network\",\n    firewall: \"network\",\n\n    email: \"email\",\n    mail: \"email\",\n    phishing: \"email\",\n\n    cloud: \"cloud\",\n    azure: \"cloud\",\n    aws: \"cloud\",\n    gcp: \"cloud\",\n\n    data: \"data\",\n    dlp: \"data\",\n\n    application: \"application\",\n    app: \"application\",\n\n    other: \"other\"\n  };\n\n  return categoryMap[category] || \"unknown\";\n}\n\nfunction addUniqueString(array, value) {\n  if (\n    value !== undefined &&\n    value !== null &&\n    String(value).trim() !== \"\"\n  ) {\n    const normalizedValue = String(value).trim();\n\n    if (!array.includes(normalizedValue)) {\n      array.push(normalizedValue);\n    }\n  }\n}\n\nfunction addUniqueIp(array, value, role) {\n  if (\n    value === undefined ||\n    value === null ||\n    String(value).trim() === \"\"\n  ) {\n    return;\n  }\n\n  const ip = String(value).trim();\n\n  const exists = array.some(\n    item => item.value === ip && item.role === role\n  );\n\n  if (!exists) {\n    array.push({\n      value: ip,\n      role\n    });\n  }\n}\n\n// -----------------------------\n// Entities\n// -----------------------------\n\nconst users = [];\nconst hosts = [];\nconst ips = [];\n\naddUniqueString(users, input.user);\naddUniqueString(hosts, input.host);\n\naddUniqueIp(ips, input.source_ip, \"source\");\naddUniqueIp(ips, input.destination_ip, \"destination\");\n\n// -----------------------------\n// Canonical alert\n// -----------------------------\n\nconst normalizedAlert = {\n  schema_version: \"1.0\",\n\n  alert_id: String(input.id || \"\").trim(),\n  title: String(input.name || \"\").trim(),\n  description: String(input.description || \"\").trim(),\n\n  severity: normalizeSeverity(input.severity),\n  category: normalizeCategory(input.category),\n\n  source: {\n    vendor: String(input.vendor || \"\").trim(),\n    product: String(input.product || \"\").trim(),\n    integration: \"manual\"\n  },\n\n  // Do not call toISOString() before validation\n  event_time: input.timestamp\n    ? String(input.timestamp).trim()\n    : new Date().toISOString(),\n\n  entities: {\n    users,\n    hosts,\n    ips\n  },\n\n  iocs: [],\n\n  metadata: {\n    additional_data: input.additional_data || {}\n  },\n\n  raw_alert: input\n};\n\n// -----------------------------\n// Validation\n// -----------------------------\n\nconst validationErrors = [];\n\nif (!normalizedAlert.alert_id) {\n  validationErrors.push(\"alert_id is required\");\n}\n\nif (!normalizedAlert.title) {\n  validationErrors.push(\"title is required\");\n}\n\nif (!normalizedAlert.source.vendor) {\n  validationErrors.push(\"source.vendor is required\");\n}\n\nif (!normalizedAlert.source.product) {\n  validationErrors.push(\"source.product is required\");\n}\n\nif (\n  !normalizedAlert.event_time ||\n  Number.isNaN(Date.parse(normalizedAlert.event_time))\n) {\n  validationErrors.push(\n    \"event_time must be a valid ISO 8601 timestamp\"\n  );\n}\n\n// -----------------------------\n// Reject invalid alerts\n// -----------------------------\n\nif (validationErrors.length > 0) {\n  throw new Error(\n    `Alert validation failed: ${validationErrors.join(\"; \")}`\n  );\n}\n\n// -----------------------------\n// Final normalization\n// -----------------------------\n\nnormalizedAlert.event_time =\n  new Date(normalizedAlert.event_time).toISOString();\n\n// -----------------------------\n// n8n output\n// -----------------------------\n\nreturn [\n  {\n    json: normalizedAlert\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "511ccc1d-20dc-43df-b2c2-4777023fd806",
+      "name": "Alert Normalizer"
+    },
+    {
+      "parameters": {
+        "jsCode": "const alert = $json;\n\n// --------------------------------------------------\n// 1. Extract explicit IP roles\n// --------------------------------------------------\n\nconst sourceIps = [];\nconst destinationIps = [];\nconst relatedIps = [];\n\nfor (const ip of alert.entities?.ips || []) {\n  if (!ip?.value) {\n    continue;\n  }\n\n  switch (ip.role) {\n    case \"source\":\n      sourceIps.push(ip.value);\n      break;\n\n    case \"destination\":\n      destinationIps.push(ip.value);\n      break;\n\n    default:\n      relatedIps.push(ip.value);\n      break;\n  }\n}\n\n// --------------------------------------------------\n// 2. Extract provider-specific context\n// --------------------------------------------------\n\nconst additionalData =\n  alert.metadata?.additional_data || {};\n\n// --------------------------------------------------\n// 3. Build geographic observations\n// --------------------------------------------------\n//\n// IMPORTANT:\n//\n// country_a and country_b are provider observations.\n//\n// The current alert does NOT explicitly establish:\n//   source_ip      -> country_a\n//   destination_ip -> country_b\n//\n// Therefore locations are intentionally represented\n// separately from IP entities.\n// --------------------------------------------------\n\nconst reportedLocations = [];\n\nif (\n  additionalData.country_a !== undefined &&\n  additionalData.country_a !== null &&\n  String(additionalData.country_a).trim() !== \"\"\n) {\n  reportedLocations.push(\n    String(additionalData.country_a).trim()\n  );\n}\n\nif (\n  additionalData.country_b !== undefined &&\n  additionalData.country_b !== null &&\n  String(additionalData.country_b).trim() !== \"\"\n) {\n  const location =\n    String(additionalData.country_b).trim();\n\n  if (!reportedLocations.includes(location)) {\n    reportedLocations.push(location);\n  }\n}\n\n// --------------------------------------------------\n// 4. Build investigation context\n// --------------------------------------------------\n\nconst investigationContext = {\n  context_version: \"1.0\",\n\n  task: \"initial_security_alert_analysis\",\n\n  instructions: {\n    objective:\n      \"Perform an initial SOC triage using only explicitly provided evidence.\",\n\n    evidence_policy: [\n      \"Treat only explicitly provided fields and relationships as observed evidence.\",\n      \"Do not infer relationships between independent fields.\",\n      \"Do not associate geographic locations with IP addresses unless that mapping is explicitly provided.\",\n      \"Do not state that a user authenticated from a specific country unless the input explicitly establishes that relationship.\",\n      \"Do not invent missing events, activity, users, devices, threat intelligence, authentication details, or geographic relationships.\",\n      \"Keep observed evidence separate from hypotheses.\",\n      \"Identify missing evidence required for further investigation.\"\n    ]\n  },\n\n  alert: {\n    schema_version:\n      alert.schema_version,\n\n    identity: {\n      alert_id:\n        alert.alert_id,\n\n      title:\n        alert.title,\n\n      description:\n        alert.description\n    },\n\n    classification: {\n      severity:\n        alert.severity,\n\n      category:\n        alert.category\n    },\n\n    source: {\n      vendor:\n        alert.source?.vendor || null,\n\n      product:\n        alert.source?.product || null,\n\n      integration:\n        alert.source?.integration || null\n    },\n\n    timing: {\n      event_time:\n        alert.event_time\n    },\n\n    entities: {\n      users:\n        alert.entities?.users || [],\n\n      hosts:\n        alert.entities?.hosts || [],\n\n      source_ips:\n        sourceIps,\n\n      destination_ips:\n        destinationIps,\n\n      related_ips:\n        relatedIps\n    },\n\n    iocs:\n      alert.iocs || [],\n\n    provider_context: {\n      authentication_method:\n        additionalData.authentication_method ?? null,\n\n      device_managed:\n        additionalData.device_managed ?? null,\n\n      geographic_observations: {\n        reported_locations:\n          reportedLocations,\n\n        relationship_to_ip_addresses:\n          \"unknown\",\n\n        relationship_to_user_authentication:\n          \"not_explicitly_provided\"\n      }\n    }\n  },\n\n  evidence_constraints: {\n    geographic_mapping_explicit:\n      false,\n\n    geographic_user_relationship_explicit:\n      false,\n\n    threat_intelligence_available:\n      false,\n\n    historical_signins_available:\n      false,\n\n    endpoint_activity_available:\n      false,\n\n    post_authentication_activity_available:\n      false\n  }\n};\n\n// --------------------------------------------------\n// 5. Output\n// --------------------------------------------------\n\nreturn [\n  {\n    json: investigationContext\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "81a767c5-7769-4e78-a1aa-83e30b4be575",
+      "name": "Investigation Context Builder"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ollama:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        816,
+        0
+      ],
+      "id": "bef0f919-5a72-431e-994f-c79b1481b922",
+      "name": "Ollama Initial Analysis"
+    },
+    {
+      "parameters": {
+        "jsCode": "const context = $json;\n\n// --------------------------------------------------\n// 1. Expected canonical output\n// --------------------------------------------------\n\nconst expectedOutput = {\n  analysis_version: \"1.0\",\n\n  alert_id:\n    context.alert?.identity?.alert_id || \"\",\n\n  summary:\n    \"Concise non-empty summary based only on explicit evidence.\",\n\n  observed_evidence: [\n    {\n      field: \"example_field\",\n      value: \"example_value\"\n    }\n  ],\n\n  hypotheses: [],\n\n  risk_assessment: {\n    level: \"unknown\",\n    reasoning: []\n  },\n\n  missing_evidence: [],\n\n  preliminary_verdict:\n    \"inconclusive\",\n\n  confidence:\n    0,\n\n  recommended_investigations: []\n};\n\n// --------------------------------------------------\n// 2. System prompt\n// --------------------------------------------------\n\nconst systemPrompt =\n  \"You are a cybersecurity SOC analyst. \" +\n\n  \"Your analysis must be evidence-grounded and conservative. \" +\n\n  \"Use only facts and relationships explicitly represented in the investigation context. \" +\n\n  \"Never create a relationship between two pieces of evidence merely because both are present in the input. \" +\n\n  \"Never convert an observation into a stronger claim than the source evidence supports. \" +\n\n  \"Keep observed evidence strictly separate from hypotheses. \" +\n\n  \"Return only valid JSON. \" +\n\n  \"Do not use Markdown, code fences, comments, or explanatory text outside the JSON object.\";\n\n// --------------------------------------------------\n// 3. User prompt\n// --------------------------------------------------\n\nconst userPrompt =\n  \"Perform an initial SOC triage using the provided investigation context. \" +\n\n  \"Return exactly one JSON object matching this structure: \" +\n  JSON.stringify(expectedOutput) +\n  \". \" +\n\n  \"MANDATORY EVIDENCE RULES: \" +\n\n  \"1. analysis_version must be exactly '1.0'. \" +\n\n  \"2. alert_id must exactly match the provided alert ID. \" +\n\n  \"3. summary must be a concise non-empty description based only on explicitly supported facts. \" +\n\n  \"4. observed_evidence must contain only facts explicitly present in the investigation context. \" +\n\n  \"5. Each observed_evidence entry must contain field and value. \" +\n\n  \"6. Preserve the original JSON type of observed values whenever possible. \" +\n\n  \"7. Do not infer relationships between independent fields. \" +\n\n  \"8. Geographic observations are NOT automatically associated with source IPs, destination IPs, users, hosts, or authentication events. \" +\n\n  \"9. If geographic_observations.relationship_to_ip_addresses is 'unknown', you MUST NOT state or imply that any IP belongs to any reported location. \" +\n\n  \"10. If geographic_observations.relationship_to_user_authentication is 'not_explicitly_provided', you MUST NOT state that the user authenticated from those countries or locations. \" +\n\n  \"11. You may state that the provider context contains geographic observations for the listed locations, but their relationship to IP addresses or authentication events is unknown. \" +\n\n  \"12. hypotheses may contain plausible explanations, but they must never be presented as observed facts. \" +\n\n  \"13. risk_assessment.level must be one of: low, medium, high, critical, unknown. \" +\n\n  \"14. risk_assessment.reasoning must use only observed evidence and clearly identified uncertainty. \" +\n\n  \"15. preliminary_verdict must be one of: benign, suspicious, malicious, inconclusive. \" +\n\n  \"16. confidence must be a number between 0 and 1 representing confidence in the preliminary analysis using only currently available evidence. \" +\n\n  \"17. missing_evidence must contain human-readable descriptions. Never expose internal variable names such as historical_signins_available or geographic_mapping_explicit. \" +\n\n  \"18. recommended_investigations must describe concrete evidence that should be collected next. \" +\n\n  \"19. If evidence_constraints indicates that information is unavailable, treat that information as missing evidence. Never assume its value. \" +\n\n  \"Investigation context: \" +\n  JSON.stringify(context);\n\n// --------------------------------------------------\n// 4. Ollama request\n// --------------------------------------------------\n\nreturn [\n  {\n    json: {\n      model: \"qwen3:8b\",\n\n      messages: [\n        {\n          role: \"system\",\n          content: systemPrompt\n        },\n        {\n          role: \"user\",\n          content: userPrompt\n        }\n      ],\n\n      stream: false,\n\n      think: false,\n\n      keep_alive: \"5m\",\n\n      format: \"json\"\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        0
+      ],
+      "id": "4d1ed3fc-ae9c-457e-af76-52909f8565f4",
+      "name": "Ollama Request Builder"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $json;\n\n// --------------------------------------------------\n// 1. Extract LLM response\n// --------------------------------------------------\n\nconst content = response?.message?.content;\n\nif (!content || typeof content !== \"string\") {\n  throw new Error(\n    \"LLM analysis validation failed: message.content is missing or empty\"\n  );\n}\n\n// --------------------------------------------------\n// 2. Parse JSON\n// --------------------------------------------------\n\nlet analysis;\n\ntry {\n  analysis = JSON.parse(content);\n} catch (error) {\n  throw new Error(\n    `LLM analysis validation failed: response is not valid JSON: ${error.message}`\n  );\n}\n\n// --------------------------------------------------\n// 3. Validation helpers\n// --------------------------------------------------\n\nconst errors = [];\n\nfunction requireString(field, value) {\n  if (typeof value !== \"string\" || value.trim() === \"\") {\n    errors.push(`${field} must be a non-empty string`);\n  }\n}\n\nfunction requireArray(field, value) {\n  if (!Array.isArray(value)) {\n    errors.push(`${field} must be an array`);\n  }\n}\n\nfunction validateStringArray(field, value) {\n  if (!Array.isArray(value)) {\n    errors.push(`${field} must be an array`);\n    return;\n  }\n\n  value.forEach((item, index) => {\n    if (typeof item !== \"string\") {\n      errors.push(\n        `${field}[${index}] must be a string`\n      );\n    }\n  });\n}\n\n// --------------------------------------------------\n// 4. Top-level validation\n// --------------------------------------------------\n\nif (analysis.analysis_version !== \"1.0\") {\n  errors.push(\"analysis_version must be '1.0'\");\n}\n\nrequireString(\n  \"alert_id\",\n  analysis.alert_id\n);\n\nrequireString(\n  \"summary\",\n  analysis.summary\n);\n\nrequireArray(\n  \"observed_evidence\",\n  analysis.observed_evidence\n);\n\nvalidateStringArray(\n  \"hypotheses\",\n  analysis.hypotheses\n);\n\nvalidateStringArray(\n  \"missing_evidence\",\n  analysis.missing_evidence\n);\n\nvalidateStringArray(\n  \"recommended_investigations\",\n  analysis.recommended_investigations\n);\n\n// --------------------------------------------------\n// 5. observed_evidence validation\n// --------------------------------------------------\n\nif (Array.isArray(analysis.observed_evidence)) {\n  analysis.observed_evidence.forEach(\n    (evidence, index) => {\n\n      if (\n        typeof evidence !== \"object\" ||\n        evidence === null ||\n        Array.isArray(evidence)\n      ) {\n        errors.push(\n          `observed_evidence[${index}] must be an object`\n        );\n        return;\n      }\n\n      requireString(\n        `observed_evidence[${index}].field`,\n        evidence.field\n      );\n\n      const value = evidence.value;\n\n      const validPrimitiveTypes = [\n        \"string\",\n        \"number\",\n        \"boolean\"\n      ];\n\n      if (value === null) {\n        return;\n      }\n\n      if (Array.isArray(value)) {\n        const invalidArrayValue = value.some(\n          item =>\n            item !== null &&\n            !validPrimitiveTypes.includes(\n              typeof item\n            )\n        );\n\n        if (invalidArrayValue) {\n          errors.push(\n            `observed_evidence[${index}].value array contains an invalid type`\n          );\n        }\n\n        return;\n      }\n\n      if (\n        !validPrimitiveTypes.includes(\n          typeof value\n        )\n      ) {\n        errors.push(\n          `observed_evidence[${index}].value has invalid type`\n        );\n      }\n    }\n  );\n}\n\n// --------------------------------------------------\n// 6. Risk assessment validation\n// --------------------------------------------------\n\nconst validRiskLevels = [\n  \"low\",\n  \"medium\",\n  \"high\",\n  \"critical\",\n  \"unknown\"\n];\n\nif (\n  typeof analysis.risk_assessment !== \"object\" ||\n  analysis.risk_assessment === null ||\n  Array.isArray(analysis.risk_assessment)\n) {\n  errors.push(\n    \"risk_assessment must be an object\"\n  );\n} else {\n  if (\n    !validRiskLevels.includes(\n      analysis.risk_assessment.level\n    )\n  ) {\n    errors.push(\n      \"risk_assessment.level contains an invalid value\"\n    );\n  }\n\n  validateStringArray(\n    \"risk_assessment.reasoning\",\n    analysis.risk_assessment.reasoning\n  );\n}\n\n// --------------------------------------------------\n// 7. Preliminary verdict validation\n// --------------------------------------------------\n\nconst validVerdicts = [\n  \"benign\",\n  \"suspicious\",\n  \"malicious\",\n  \"inconclusive\"\n];\n\nif (\n  !validVerdicts.includes(\n    analysis.preliminary_verdict\n  )\n) {\n  errors.push(\n    \"preliminary_verdict contains an invalid value\"\n  );\n}\n\n// --------------------------------------------------\n// 8. Confidence validation\n// --------------------------------------------------\n\nif (\n  typeof analysis.confidence !== \"number\" ||\n  Number.isNaN(analysis.confidence) ||\n  analysis.confidence < 0 ||\n  analysis.confidence > 1\n) {\n  errors.push(\n    \"confidence must be a number between 0 and 1\"\n  );\n}\n\n// --------------------------------------------------\n// 9. Reject invalid response\n// --------------------------------------------------\n\nif (errors.length > 0) {\n  throw new Error(\n    `LLM analysis validation failed: ${errors.join(\"; \")}`\n  );\n}\n\n// --------------------------------------------------\n// 10. Return canonical analysis\n// --------------------------------------------------\n\nreturn [\n  {\n    json: analysis\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1024,
+        0
+      ],
+      "id": "e8287bea-de75-4d96-896e-db8a3af99fcc",
+      "name": "LLM Analysis Validator"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Alert Input": {
+      "main": [
+        [
+          {
+            "node": "Alert Normalizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Manual Alert Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alert Normalizer": {
+      "main": [
+        [
+          {
+            "node": "Investigation Context Builder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Investigation Context Builder": {
+      "main": [
+        [
+          {
+            "node": "Ollama Request Builder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Request Builder": {
+      "main": [
+        [
+          {
+            "node": "Ollama Initial Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Initial Analysis": {
+      "main": [
+        [
+          {
+            "node": "LLM Analysis Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "6221fca3-c0a9-4360-990b-78b2748d32bb",
+  "meta": {
+    "instanceId": "b2d82f9ccdb8bc424a72b8529b63d9b32a1170e9eed34f0a8c38afe810fb7c9d"
+  },
+  "nodeGroups": [],
+  "id": "ZxEaDfqvcy3exu4P",
+  "tags": []
+}
