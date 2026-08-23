@@ -1,0 +1,61 @@
+{
+  "name": "01 - Ollama Connectivity Test",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "187c43e6-ff6d-4b86-a4e2-6d274a17cf36",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ollama:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"model\": \"qwen3:8b\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a cybersecurity SOC analyst. Answer concisely and technically.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"What is an impossible travel alert? Answer in one sentence.\"\n    }\n  ],\n  \"stream\": false\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        224,
+        0
+      ],
+      "id": "fdc4b535-6803-4a74-91e8-7bedda049640",
+      "name": "HTTP Request"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "750766af-3a09-4852-a1c4-4053dd15616c",
+  "meta": {
+    "instanceId": "b2d82f9ccdb8bc424a72b8529b63d9b32a1170e9eed34f0a8c38afe810fb7c9d"
+  },
+  "nodeGroups": [],
+  "id": "oiQaHyXXjlB02KOG",
+  "tags": []
+}

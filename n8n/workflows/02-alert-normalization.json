@@ -1,0 +1,80 @@
+{
+  "name": "02 - Alert Normalization",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "f81f859d-65d6-4674-8f8b-6e4fa9f384e2",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    json: {\n      id: \"ALERT-0001\",\n      name: \"Impossible travel detected\",\n      description: \"User authenticated from geographically distant locations within an unusual time window.\",\n      severity: \"High\",\n\n      vendor: \"Microsoft\",\n      product: \"Microsoft Defender XDR\",\n\n      category: \"Identity\",\n\n      timestamp: \"2026-08-23T17:30:00Z\",\n\n      user: \"john.doe@example.com\",\n      host: \"WIN11-LAPTOP-01\",\n\n      source_ip: \"185.220.101.20\",\n      destination_ip: \"20.190.128.25\",\n\n      additional_data: {\n        country_a: \"Spain\",\n        country_b: \"Netherlands\",\n        authentication_method: \"MFA\",\n        device_managed: false\n      }\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "id": "093a1731-7d9a-435d-ab00-676513c4ac38",
+      "name": "Manual Alert Input"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json;\n\n// -----------------------------\n// Helper functions\n// -----------------------------\n\nfunction normalizeSeverity(value) {\n  if (!value) return \"unknown\";\n\n  const severity = String(value).toLowerCase().trim();\n\n  const severityMap = {\n    info: \"informational\",\n    informational: \"informational\",\n    low: \"low\",\n    medium: \"medium\",\n    moderate: \"medium\",\n    high: \"high\",\n    critical: \"critical\",\n    severe: \"critical\"\n  };\n\n  return severityMap[severity] || \"unknown\";\n}\n\nfunction normalizeCategory(value) {\n  if (!value) return \"unknown\";\n\n  const category = String(value).toLowerCase().trim();\n\n  const categoryMap = {\n    identity: \"identity\",\n    iam: \"identity\",\n    authentication: \"identity\",\n\n    endpoint: \"endpoint\",\n    edr: \"endpoint\",\n    host: \"endpoint\",\n\n    network: \"network\",\n    firewall: \"network\",\n\n    email: \"email\",\n    mail: \"email\",\n    phishing: \"email\",\n\n    cloud: \"cloud\",\n    azure: \"cloud\",\n    aws: \"cloud\",\n    gcp: \"cloud\",\n\n    data: \"data\",\n    dlp: \"data\",\n\n    application: \"application\",\n    app: \"application\",\n\n    other: \"other\"\n  };\n\n  return categoryMap[category] || \"unknown\";\n}\n\nfunction addUniqueString(array, value) {\n  if (\n    value !== undefined &&\n    value !== null &&\n    String(value).trim() !== \"\"\n  ) {\n    const normalizedValue = String(value).trim();\n\n    if (!array.includes(normalizedValue)) {\n      array.push(normalizedValue);\n    }\n  }\n}\n\nfunction addUniqueIp(array, value, role) {\n  if (\n    value === undefined ||\n    value === null ||\n    String(value).trim() === \"\"\n  ) {\n    return;\n  }\n\n  const ip = String(value).trim();\n\n  const exists = array.some(\n    item => item.value === ip && item.role === role\n  );\n\n  if (!exists) {\n    array.push({\n      value: ip,\n      role\n    });\n  }\n}\n\n// -----------------------------\n// Entities\n// -----------------------------\n\nconst users = [];\nconst hosts = [];\nconst ips = [];\n\naddUniqueString(users, input.user);\naddUniqueString(hosts, input.host);\n\naddUniqueIp(ips, input.source_ip, \"source\");\naddUniqueIp(ips, input.destination_ip, \"destination\");\n\n// -----------------------------\n// Canonical alert\n// -----------------------------\n\nconst normalizedAlert = {\n  schema_version: \"1.0\",\n\n  alert_id: String(input.id || \"\").trim(),\n  title: String(input.name || \"\").trim(),\n  description: String(input.description || \"\").trim(),\n\n  severity: normalizeSeverity(input.severity),\n  category: normalizeCategory(input.category),\n\n  source: {\n    vendor: String(input.vendor || \"\").trim(),\n    product: String(input.product || \"\").trim(),\n    integration: \"manual\"\n  },\n\n  // Do not call toISOString() before validation\n  event_time: input.timestamp\n    ? String(input.timestamp).trim()\n    : new Date().toISOString(),\n\n  entities: {\n    users,\n    hosts,\n    ips\n  },\n\n  iocs: [],\n\n  metadata: {\n    additional_data: input.additional_data || {}\n  },\n\n  raw_alert: input\n};\n\n// -----------------------------\n// Validation\n// -----------------------------\n\nconst validationErrors = [];\n\nif (!normalizedAlert.alert_id) {\n  validationErrors.push(\"alert_id is required\");\n}\n\nif (!normalizedAlert.title) {\n  validationErrors.push(\"title is required\");\n}\n\nif (!normalizedAlert.source.vendor) {\n  validationErrors.push(\"source.vendor is required\");\n}\n\nif (!normalizedAlert.source.product) {\n  validationErrors.push(\"source.product is required\");\n}\n\nif (\n  !normalizedAlert.event_time ||\n  Number.isNaN(Date.parse(normalizedAlert.event_time))\n) {\n  validationErrors.push(\n    \"event_time must be a valid ISO 8601 timestamp\"\n  );\n}\n\n// -----------------------------\n// Reject invalid alerts\n// -----------------------------\n\nif (validationErrors.length > 0) {\n  throw new Error(\n    `Alert validation failed: ${validationErrors.join(\"; \")}`\n  );\n}\n\n// -----------------------------\n// Final normalization\n// -----------------------------\n\nnormalizedAlert.event_time =\n  new Date(normalizedAlert.event_time).toISOString();\n\n// -----------------------------\n// n8n output\n// -----------------------------\n\nreturn [\n  {\n    json: normalizedAlert\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ],
+      "id": "196e06c5-ebc9-490d-8842-114fb521c923",
+      "name": "Alert Normalizer"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Manual Alert Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Alert Input": {
+      "main": [
+        [
+          {
+            "node": "Alert Normalizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "3c6b0f09-2850-4876-85ee-54b622893f8f",
+  "meta": {
+    "instanceId": "b2d82f9ccdb8bc424a72b8529b63d9b32a1170e9eed34f0a8c38afe810fb7c9d"
+  },
+  "nodeGroups": [],
+  "id": "uBWaOCGEjFmFd2ba",
+  "tags": []
+}
