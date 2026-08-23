@@ -1,0 +1,275 @@
+{
+  "name": "04 - Investigation Planner",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "9d180e9e-3183-4220-af42-18430c4e02f8",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    json: {\n      analysis_version: \"1.0\",\n\n      alert_id: \"ALERT-0001\",\n\n      summary:\n        \"User authenticated from geographically distant locations within an unusual time window.\",\n\n      observed_evidence: [\n        {\n          field: \"users\",\n          value: [\n            \"john.doe@example.com\"\n          ]\n        },\n        {\n          field: \"hosts\",\n          value: [\n            \"WIN11-LAPTOP-01\"\n          ]\n        },\n        {\n          field: \"source_ips\",\n          value: [\n            \"185.220.101.20\"\n          ]\n        },\n        {\n          field: \"destination_ips\",\n          value: [\n            \"20.190.128.25\"\n          ]\n        },\n        {\n          field: \"authentication_method\",\n          value: \"MFA\"\n        },\n        {\n          field: \"geographic_observations.reported_locations\",\n          value: [\n            \"Spain\",\n            \"Netherlands\"\n          ]\n        }\n      ],\n\n      hypotheses: [],\n\n      risk_assessment: {\n        level: \"unknown\",\n        reasoning: [\n          \"Geographic locations reported are not explicitly linked to IP addresses or user authentication events.\"\n        ]\n      },\n\n      missing_evidence: [\n        \"Explicit mapping of reported geographic locations to IP addresses or user authentication events.\",\n        \"Historical sign-in data to assess unusual travel patterns.\",\n        \"Endpoint activity details to confirm user behavior.\"\n      ],\n\n      preliminary_verdict: \"inconclusive\",\n\n      confidence: 0,\n\n      recommended_investigations: [\n        \"Verify if the reported geographic locations are explicitly associated with the source or destination IP addresses.\",\n        \"Collect historical sign-in data to analyze authentication patterns.\",\n        \"Gather endpoint activity details to confirm user behavior.\"\n      ]\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "id": "b23871d7-bfc3-4ac4-a9a4-f1043d2d8e69",
+      "name": "Canonical Analysis Input"
+    },
+    {
+      "parameters": {
+        "jsCode": "const analysis = $json;\n\n// --------------------------------------------------\n// 1. Allowed investigation tools\n// --------------------------------------------------\n//\n// Tool capabilities are deliberately narrow.\n//\n// The planner may only request evidence that a tool\n// is explicitly documented as being able to collect.\n// --------------------------------------------------\n\nconst allowedTools = {\n  get_signins: {\n    description:\n      \"Retrieve authentication and sign-in events for a specific user.\",\n    capabilities: [\n      \"Retrieve historical user sign-ins\",\n      \"Retrieve authentication timestamps\",\n      \"Retrieve IP addresses observed in authentication events\",\n      \"Retrieve authentication results and available authentication context\"\n    ],\n    limitations: [\n      \"Does not provide endpoint telemetry\",\n      \"Does not provide email activity\",\n      \"Does not provide authoritative threat intelligence\"\n    ],\n    required_parameters: [\n      \"user\"\n    ]\n  },\n\n  get_ip_reputation: {\n    description:\n      \"Retrieve threat intelligence and reputation information for a specific IP address.\",\n    capabilities: [\n      \"Retrieve known malicious or suspicious reputation\",\n      \"Retrieve threat intelligence information when available\"\n    ],\n    limitations: [\n      \"Must not be used as an authoritative IP-to-country mapping tool\",\n      \"Must not infer where a user authenticated from\",\n      \"Must not establish a relationship between an IP address and a geographic observation unless the tool explicitly returns such evidence\"\n    ],\n    required_parameters: [\n      \"ip\"\n    ]\n  },\n\n  get_endpoint_activity: {\n    description:\n      \"Retrieve security telemetry and activity associated with a specific endpoint or host.\",\n    capabilities: [\n      \"Retrieve endpoint security activity\",\n      \"Retrieve relevant endpoint events\",\n      \"Retrieve available process or detection activity\"\n    ],\n    limitations: [\n      \"Does not establish identity sign-in history\",\n      \"Does not provide email activity\",\n      \"Does not provide authoritative IP geolocation\"\n    ],\n    required_parameters: [\n      \"host\"\n    ]\n  },\n\n  get_user_activity: {\n    description:\n      \"Retrieve relevant user activity outside authentication events.\",\n    capabilities: [\n      \"Retrieve available user activity\",\n      \"Retrieve relevant actions associated with a user identity\"\n    ],\n    limitations: [\n      \"Does not replace dedicated authentication telemetry\",\n      \"Does not provide endpoint telemetry unless explicitly returned by the underlying source\"\n    ],\n    required_parameters: [\n      \"user\"\n    ]\n  },\n\n  get_mail_activity: {\n    description:\n      \"Retrieve email activity associated with a specific user.\",\n    capabilities: [\n      \"Retrieve relevant sent or received email activity\",\n      \"Retrieve available mail security context\"\n    ],\n    limitations: [\n      \"Does not provide endpoint telemetry\",\n      \"Does not establish IP geolocation\"\n    ],\n    required_parameters: [\n      \"user\"\n    ]\n  }\n};\n\n// --------------------------------------------------\n// 2. Expected output structure\n// --------------------------------------------------\n\nconst expectedOutput = {\n  plan_version: \"1.0\",\n\n  alert_id:\n    analysis.alert_id || \"\",\n\n  objective:\n    \"Describe the investigation objective.\",\n\n  investigation_steps: [\n    {\n      step_id: \"step-1\",\n\n      priority: \"high\",\n\n      purpose:\n        \"Explain why this investigation step is required.\",\n\n      tool:\n        \"get_signins\",\n\n      parameters: {\n        user:\n          \"user@example.com\"\n      },\n\n      evidence_target:\n        \"Describe only evidence that the selected tool is explicitly capable of collecting.\"\n    }\n  ]\n};\n\n// --------------------------------------------------\n// 3. System prompt\n// --------------------------------------------------\n\nconst systemPrompt =\n  \"You are an investigation planner for a cybersecurity SOC. \" +\n\n  \"Your role is to create an executable evidence-collection plan, not to perform the investigation. \" +\n\n  \"Use only the evidence and investigation requirements present in the validated analysis. \" +\n\n  \"Do not invent users, hosts, IP addresses, evidence, relationships, tool capabilities, or tools. \" +\n\n  \"A valid tool name does not imply that the tool can answer every investigation question. \" +\n\n  \"Every investigation step must request evidence that the selected tool is explicitly documented as being capable of collecting. \" +\n\n  \"Respect all tool limitations. \" +\n\n  \"If no available tool can collect a required piece of evidence, omit that requirement from the executable investigation_steps. \" +\n\n  \"Do not perform containment or remediation actions. \" +\n\n  \"Return only valid JSON. \" +\n\n  \"Do not use Markdown, code fences, comments, or explanatory text outside the JSON object.\";\n\n// --------------------------------------------------\n// 4. User prompt\n// --------------------------------------------------\n\nconst userPrompt =\n  \"Create a structured SOC investigation plan from the validated initial analysis. \" +\n\n  \"AVAILABLE TOOLS AND THEIR EXACT CAPABILITIES: \" +\n  JSON.stringify(allowedTools) +\n  \". \" +\n\n  \"Return exactly one JSON object matching this structure: \" +\n  JSON.stringify(expectedOutput) +\n  \". \" +\n\n  \"MANDATORY RULES: \" +\n\n  \"1. plan_version must be exactly '1.0'. \" +\n\n  \"2. alert_id must exactly match the input analysis alert_id. \" +\n\n  \"3. objective must be a concise non-empty description of what the investigation needs to determine. \" +\n\n  \"4. investigation_steps must contain only steps justified by missing_evidence, recommended_investigations, observed_evidence, or hypotheses from the validated analysis. \" +\n\n  \"5. tool must be one of the provided available tool names. Never invent a tool. \" +\n\n  \"6. parameters may contain only entity values explicitly present in observed_evidence. Never invent users, IP addresses, hosts, domains, email addresses, or other entities. \" +\n\n  \"7. Each selected tool may only be used for capabilities explicitly listed in its capabilities field. \" +\n\n  \"8. Respect every limitation declared for the selected tool. \" +\n\n  \"9. Do not use get_ip_reputation to establish an authoritative mapping between an IP address and Spain, Netherlands, or any other geographic observation. \" +\n\n  \"10. Do not use any available tool to claim that a user authenticated from Spain or Netherlands unless collected evidence explicitly establishes that relationship. \" +\n\n  \"11. If the analysis requires evidence that no available tool can collect, do not invent a substitute tool or misuse another tool. Omit that requirement from investigation_steps. \" +\n\n  \"12. It is valid for an executable investigation plan to cover only part of the missing evidence when the remaining evidence cannot currently be collected by the available tools. \" +\n\n  \"13. priority must be one of: high, medium, low. \" +\n\n  \"14. step_id values must start at step-1 and increase sequentially without gaps. \" +\n\n  \"15. purpose must explain why the selected tool should be executed. \" +\n\n  \"16. evidence_target must describe evidence the selected tool can actually return. It must not describe a desired conclusion or predicted result. \" +\n\n  \"17. get_ip_reputation may be used to determine whether an observed IP has suspicious or malicious reputation, but not to prove its geographic relationship to an authentication event. \" +\n\n  \"18. get_signins may be used to retrieve historical authentication activity for an explicitly observed user. \" +\n\n  \"19. get_endpoint_activity may be used to retrieve endpoint activity for an explicitly observed host. \" +\n\n  \"20. Do not include remediation, containment, blocking, account disablement, password reset, session revocation, or destructive actions. \" +\n\n  \"Validated analysis: \" +\n  JSON.stringify(analysis);\n\n// --------------------------------------------------\n// 5. Ollama request\n// --------------------------------------------------\n\nreturn [\n  {\n    json: {\n      model: \"qwen3:8b\",\n\n      messages: [\n        {\n          role: \"system\",\n          content: systemPrompt\n        },\n        {\n          role: \"user\",\n          content: userPrompt\n        }\n      ],\n\n      stream: false,\n\n      think: false,\n\n      keep_alive: \"5m\",\n\n      format: \"json\"\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ],
+      "id": "9713ba6b-89d1-4467-98c2-a1b14932178a",
+      "name": "Investigation Planner Request Builder"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ollama:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        672,
+        0
+      ],
+      "id": "48f1e79b-4baa-4b2d-902d-05f6c348d741",
+      "name": "Ollama Investigation Planner"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// Investigation Plan Validator\n//\n// Purpose:\n// Validate an LLM-generated investigation plan\n// without stopping the workflow.\n//\n// Output:\n// {\n//   valid: boolean,\n//   errors: [],\n//   plan: {},\n//   validation_metadata: {}\n// }\n//\n// LLM output is always treated as untrusted input.\n// ==================================================\n\n\n// --------------------------------------------------\n// 1. Extract Ollama response\n// --------------------------------------------------\n\nconst response = $json;\n\nconst content = response?.message?.content;\n\n\n// --------------------------------------------------\n// 2. Prepare validation result\n// --------------------------------------------------\n\nconst errors = [];\n\nlet plan = null;\n\n\n// --------------------------------------------------\n// 3. Validate message.content\n// --------------------------------------------------\n\nif (\n  !content ||\n  typeof content !== \"string\"\n) {\n  errors.push(\n    \"message.content is missing or empty\"\n  );\n}\n\n\n// --------------------------------------------------\n// 4. Parse LLM JSON\n// --------------------------------------------------\n\nif (errors.length === 0) {\n  try {\n    plan = JSON.parse(content);\n  } catch (error) {\n    errors.push(\n      `response is not valid JSON: ${error.message}`\n    );\n  }\n}\n\n\n// --------------------------------------------------\n// 5. Retrieve validated canonical analysis\n// --------------------------------------------------\n\nconst analysis =\n  $(\"Canonical Analysis Input\").first().json;\n\n\n// --------------------------------------------------\n// 6. Helper functions\n// --------------------------------------------------\n\nfunction requireString(field, value) {\n  if (\n    typeof value !== \"string\" ||\n    value.trim() === \"\"\n  ) {\n    errors.push(\n      `${field} must be a non-empty string`\n    );\n  }\n}\n\n\nfunction containsAny(text, patterns) {\n  if (typeof text !== \"string\") {\n    return false;\n  }\n\n  const normalized =\n    text.toLowerCase();\n\n  return patterns.some(\n    pattern =>\n      normalized.includes(\n        pattern.toLowerCase()\n      )\n  );\n}\n\n\n// --------------------------------------------------\n// 7. Extract allowed entities\n// --------------------------------------------------\n\nconst allowedUsers = new Set();\nconst allowedHosts = new Set();\nconst allowedIps = new Set();\n\nfor (\n  const evidence\n  of analysis.observed_evidence || []\n) {\n\n  if (\n    !evidence ||\n    typeof evidence !== \"object\"\n  ) {\n    continue;\n  }\n\n  const field =\n    evidence.field;\n\n  const value =\n    evidence.value;\n\n  const values =\n    Array.isArray(value)\n      ? value\n      : [value];\n\n  for (const item of values) {\n\n    if (\n      item === null ||\n      item === undefined\n    ) {\n      continue;\n    }\n\n    const normalized =\n      String(item).trim();\n\n    if (!normalized) {\n      continue;\n    }\n\n    if (field === \"users\") {\n      allowedUsers.add(normalized);\n    }\n\n    if (field === \"hosts\") {\n      allowedHosts.add(normalized);\n    }\n\n    if (\n      field === \"source_ips\" ||\n      field === \"destination_ips\" ||\n      field === \"related_ips\"\n    ) {\n      allowedIps.add(normalized);\n    }\n  }\n}\n\n\n// --------------------------------------------------\n// 8. Tool policies\n// --------------------------------------------------\n\nconst toolPolicies = {\n\n  get_signins: {\n    requiredParameters: [\n      \"user\"\n    ],\n\n    allowedParameters: [\n      \"user\"\n    ],\n\n    entityValidation: {\n      parameter: \"user\",\n      allowedValues: allowedUsers\n    },\n\n    forbiddenPurposePatterns: [\n      \"endpoint activity\",\n      \"email activity\",\n      \"malicious reputation\",\n      \"ip reputation\"\n    ],\n\n    forbiddenEvidencePatterns: [\n      \"endpoint telemetry\",\n      \"email activity\",\n      \"ip reputation\"\n    ]\n  },\n\n\n  get_ip_reputation: {\n    requiredParameters: [\n      \"ip\"\n    ],\n\n    allowedParameters: [\n      \"ip\"\n    ],\n\n    entityValidation: {\n      parameter: \"ip\",\n      allowedValues: allowedIps\n    },\n\n    forbiddenPurposePatterns: [\n      \"geographic\",\n      \"geolocation\",\n      \"country\",\n      \"location\",\n      \"associated with the reported geographic\",\n      \"linked to the reported geographic\",\n      \"authenticated from\"\n    ],\n\n    forbiddenEvidencePatterns: [\n      \"geographic mapping\",\n      \"geolocation mapping\",\n      \"country mapping\",\n      \"authenticated from\",\n      \"user location\"\n    ]\n  },\n\n\n  get_endpoint_activity: {\n    requiredParameters: [\n      \"host\"\n    ],\n\n    allowedParameters: [\n      \"host\"\n    ],\n\n    entityValidation: {\n      parameter: \"host\",\n      allowedValues: allowedHosts\n    },\n\n    forbiddenPurposePatterns: [\n      \"historical sign-in\",\n      \"email activity\",\n      \"ip reputation\",\n      \"geographic mapping\"\n    ],\n\n    forbiddenEvidencePatterns: [\n      \"historical sign-in\",\n      \"ip reputation\",\n      \"email activity\"\n    ]\n  },\n\n\n  get_user_activity: {\n    requiredParameters: [\n      \"user\"\n    ],\n\n    allowedParameters: [\n      \"user\"\n    ],\n\n    entityValidation: {\n      parameter: \"user\",\n      allowedValues: allowedUsers\n    },\n\n    forbiddenPurposePatterns: [\n      \"endpoint telemetry\",\n      \"ip reputation\",\n      \"geographic mapping\"\n    ],\n\n    forbiddenEvidencePatterns: [\n      \"endpoint telemetry\",\n      \"ip reputation\"\n    ]\n  },\n\n\n  get_mail_activity: {\n    requiredParameters: [\n      \"user\"\n    ],\n\n    allowedParameters: [\n      \"user\"\n    ],\n\n    entityValidation: {\n      parameter: \"user\",\n      allowedValues: allowedUsers\n    },\n\n    forbiddenPurposePatterns: [\n      \"endpoint telemetry\",\n      \"historical sign-in\",\n      \"ip reputation\",\n      \"geographic mapping\"\n    ],\n\n    forbiddenEvidencePatterns: [\n      \"endpoint telemetry\",\n      \"historical sign-in\",\n      \"ip reputation\"\n    ]\n  }\n};\n\n\n// --------------------------------------------------\n// 9. Validate parsed plan\n// --------------------------------------------------\n\nif (\n  plan !== null &&\n  typeof plan === \"object\" &&\n  !Array.isArray(plan)\n) {\n\n  // ----------------------------------------------\n  // Plan version\n  // ----------------------------------------------\n\n  if (plan.plan_version !== \"1.0\") {\n    errors.push(\n      \"plan_version must be '1.0'\"\n    );\n  }\n\n\n  // ----------------------------------------------\n  // Alert ID\n  // ----------------------------------------------\n\n  requireString(\n    \"alert_id\",\n    plan.alert_id\n  );\n\n\n  if (\n    typeof plan.alert_id === \"string\" &&\n    plan.alert_id !== analysis.alert_id\n  ) {\n    errors.push(\n      \"alert_id does not match the validated analysis\"\n    );\n  }\n\n\n  // ----------------------------------------------\n  // Objective\n  // ----------------------------------------------\n\n  requireString(\n    \"objective\",\n    plan.objective\n  );\n\n\n  // ----------------------------------------------\n  // Investigation steps\n  // ----------------------------------------------\n\n  if (\n    !Array.isArray(\n      plan.investigation_steps\n    )\n  ) {\n    errors.push(\n      \"investigation_steps must be an array\"\n    );\n  } else {\n\n    if (\n      plan.investigation_steps.length === 0\n    ) {\n      errors.push(\n        \"investigation_steps must contain at least one step\"\n      );\n    }\n\n\n    const validPriorities = [\n      \"high\",\n      \"medium\",\n      \"low\"\n    ];\n\n\n    plan.investigation_steps.forEach(\n      (step, index) => {\n\n        const prefix =\n          `investigation_steps[${index}]`;\n\n\n        // ----------------------------------------\n        // Step object\n        // ----------------------------------------\n\n        if (\n          typeof step !== \"object\" ||\n          step === null ||\n          Array.isArray(step)\n        ) {\n          errors.push(\n            `${prefix} must be an object`\n          );\n\n          return;\n        }\n\n\n        // ----------------------------------------\n        // Sequential step ID\n        // ----------------------------------------\n\n        const expectedStepId =\n          `step-${index + 1}`;\n\n        if (\n          step.step_id !== expectedStepId\n        ) {\n          errors.push(\n            `${prefix}.step_id must be '${expectedStepId}'`\n          );\n        }\n\n\n        // ----------------------------------------\n        // Priority\n        // ----------------------------------------\n\n        if (\n          !validPriorities.includes(\n            step.priority\n          )\n        ) {\n          errors.push(\n            `${prefix}.priority contains an invalid value`\n          );\n        }\n\n\n        // ----------------------------------------\n        // Purpose\n        // ----------------------------------------\n\n        requireString(\n          `${prefix}.purpose`,\n          step.purpose\n        );\n\n\n        // ----------------------------------------\n        // Evidence target\n        // ----------------------------------------\n\n        requireString(\n          `${prefix}.evidence_target`,\n          step.evidence_target\n        );\n\n\n        // ----------------------------------------\n        // Tool allowlist\n        // ----------------------------------------\n\n        if (\n          typeof step.tool !== \"string\" ||\n          !Object.prototype.hasOwnProperty.call(\n            toolPolicies,\n            step.tool\n          )\n        ) {\n          errors.push(\n            `${prefix}.tool '${step.tool}' is not allowed`\n          );\n\n          return;\n        }\n\n\n        const policy =\n          toolPolicies[step.tool];\n\n\n        // ----------------------------------------\n        // Parameters\n        // ----------------------------------------\n\n        if (\n          typeof step.parameters !== \"object\" ||\n          step.parameters === null ||\n          Array.isArray(step.parameters)\n        ) {\n          errors.push(\n            `${prefix}.parameters must be an object`\n          );\n\n          return;\n        }\n\n\n        // ----------------------------------------\n        // Required parameters\n        // ----------------------------------------\n\n        for (\n          const requiredParameter\n          of policy.requiredParameters\n        ) {\n\n          if (\n            !Object.prototype.hasOwnProperty.call(\n              step.parameters,\n              requiredParameter\n            )\n          ) {\n            errors.push(\n              `${prefix}.parameters.${requiredParameter} is required for ${step.tool}`\n            );\n          }\n        }\n\n\n        // ----------------------------------------\n        // Unexpected parameters\n        // ----------------------------------------\n\n        for (\n          const parameterName\n          of Object.keys(\n            step.parameters\n          )\n        ) {\n\n          if (\n            !policy.allowedParameters.includes(\n              parameterName\n            )\n          ) {\n            errors.push(\n              `${prefix}.parameters.${parameterName} is not allowed for ${step.tool}`\n            );\n          }\n        }\n\n\n        // ----------------------------------------\n        // Entity validation\n        // ----------------------------------------\n\n        const entityRule =\n          policy.entityValidation;\n\n        if (entityRule) {\n\n          const value =\n            step.parameters[\n              entityRule.parameter\n            ];\n\n          if (\n            typeof value !== \"string\" ||\n            value.trim() === \"\"\n          ) {\n            errors.push(\n              `${prefix}.parameters.${entityRule.parameter} must be a non-empty string`\n            );\n          } else if (\n            !entityRule.allowedValues.has(\n              value\n            )\n          ) {\n            errors.push(\n              `${prefix}.parameters.${entityRule.parameter} contains an entity not present in observed evidence: ${value}`\n            );\n          }\n        }\n\n\n        // ----------------------------------------\n        // Semantic capability validation\n        // ----------------------------------------\n\n        if (\n          policy.forbiddenPurposePatterns &&\n          containsAny(\n            step.purpose,\n            policy.forbiddenPurposePatterns\n          )\n        ) {\n          errors.push(\n            `${prefix}: tool '${step.tool}' is being used for a purpose outside its allowed capabilities`\n          );\n        }\n\n\n        if (\n          policy.forbiddenEvidencePatterns &&\n          containsAny(\n            step.evidence_target,\n            policy.forbiddenEvidencePatterns\n          )\n        ) {\n          errors.push(\n            `${prefix}: evidence_target requests evidence outside the capabilities of '${step.tool}'`\n          );\n        }\n      }\n    );\n  }\n\n} else if (plan !== null) {\n\n  errors.push(\n    \"investigation plan must be a JSON object\"\n  );\n}\n\n\n// --------------------------------------------------\n// 10. Final validation result\n// --------------------------------------------------\n\nconst valid =\n  errors.length === 0;\n\n\n// --------------------------------------------------\n// 11. Controlled output\n// --------------------------------------------------\n\nreturn [\n  {\n    json: {\n      valid,\n\n      errors,\n\n      plan,\n\n      validation_metadata: {\n        validator:\n          \"investigation_plan_validator\",\n\n        validator_version:\n          \"1.0\",\n\n        validated_at:\n          new Date().toISOString(),\n\n        error_count:\n          errors.length\n      }\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        0
+      ],
+      "id": "125bd729-d84c-4b4d-946e-e6ff1bdb178b",
+      "name": "Investigation Plan Validator"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ee8b4c6f-a8fd-4466-9531-fc2be3b0b321",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1120,
+        0
+      ],
+      "id": "06c488a5-081a-468c-a301-e1f07a27e371",
+      "name": "Investigation Plan Valid?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const validationResult = $json;\n\n// --------------------------------------------------\n// Validate expected state\n// --------------------------------------------------\n\nif (validationResult.valid !== true) {\n  throw new Error(\n    \"Valid Investigation Plan received an invalid validation result\"\n  );\n}\n\nif (\n  !validationResult.plan ||\n  typeof validationResult.plan !== \"object\"\n) {\n  throw new Error(\n    \"Valid Investigation Plan received no canonical plan\"\n  );\n}\n\n\n// --------------------------------------------------\n// Return only the canonical investigation plan\n// --------------------------------------------------\n\nreturn [\n  {\n    json: validationResult.plan\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        -96
+      ],
+      "id": "20b1f66a-da99-496c-b1ca-45d4b49716a6",
+      "name": "Valid Investigation Plan"
+    },
+    {
+      "parameters": {
+        "jsCode": "const validationResult = $json;\n\n\n// --------------------------------------------------\n// 1. Validate repair input\n// --------------------------------------------------\n\nif (validationResult.valid !== false) {\n  throw new Error(\n    \"Plan Repair Request Builder received a valid plan\"\n  );\n}\n\n\nif (\n  !validationResult.plan ||\n  typeof validationResult.plan !== \"object\"\n) {\n  throw new Error(\n    \"Plan Repair Request Builder received no plan to repair\"\n  );\n}\n\n\nif (\n  !Array.isArray(validationResult.errors) ||\n  validationResult.errors.length === 0\n) {\n  throw new Error(\n    \"Plan Repair Request Builder received no validation errors\"\n  );\n}\n\n\n// --------------------------------------------------\n// 2. Retrieve canonical analysis\n// --------------------------------------------------\n\nconst analysis =\n  $(\"Canonical Analysis Input\").first().json;\n\n\n// --------------------------------------------------\n// 3. Allowed tools\n// --------------------------------------------------\n\nconst allowedTools = {\n\n  get_signins: {\n    capabilities: [\n      \"Retrieve historical user sign-ins\",\n      \"Retrieve authentication timestamps\",\n      \"Retrieve IP addresses observed in authentication events\",\n      \"Retrieve authentication results and available authentication context\"\n    ],\n\n    limitations: [\n      \"Does not provide endpoint telemetry\",\n      \"Does not provide authoritative threat intelligence\"\n    ],\n\n    required_parameters: [\n      \"user\"\n    ]\n  },\n\n\n  get_ip_reputation: {\n    capabilities: [\n      \"Retrieve malicious or suspicious IP reputation\",\n      \"Retrieve threat intelligence information when available\"\n    ],\n\n    limitations: [\n      \"Must not be used as an authoritative IP-to-country mapping tool\",\n      \"Must not establish where a user authenticated from\",\n      \"Must not prove relationships between geographic observations and authentication events\"\n    ],\n\n    required_parameters: [\n      \"ip\"\n    ]\n  },\n\n\n  get_endpoint_activity: {\n    capabilities: [\n      \"Retrieve endpoint security activity\",\n      \"Retrieve endpoint events\",\n      \"Retrieve available process or detection activity\"\n    ],\n\n    limitations: [\n      \"Does not establish historical identity sign-ins\",\n      \"Does not provide authoritative IP geolocation\"\n    ],\n\n    required_parameters: [\n      \"host\"\n    ]\n  },\n\n\n  get_user_activity: {\n    capabilities: [\n      \"Retrieve relevant activity associated with a user\"\n    ],\n\n    limitations: [\n      \"Does not replace dedicated authentication telemetry\",\n      \"Does not provide endpoint telemetry unless explicitly returned\"\n    ],\n\n    required_parameters: [\n      \"user\"\n    ]\n  },\n\n\n  get_mail_activity: {\n    capabilities: [\n      \"Retrieve relevant sent or received email activity\",\n      \"Retrieve available mail security context\"\n    ],\n\n    limitations: [\n      \"Does not provide endpoint telemetry\",\n      \"Does not establish IP geolocation\"\n    ],\n\n    required_parameters: [\n      \"user\"\n    ]\n  }\n};\n\n\n// --------------------------------------------------\n// 4. Expected output\n// --------------------------------------------------\n\nconst expectedOutput = {\n  plan_version: \"1.0\",\n\n  alert_id:\n    analysis.alert_id,\n\n  objective:\n    \"Correct investigation objective.\",\n\n  investigation_steps: [\n    {\n      step_id:\n        \"step-1\",\n\n      priority:\n        \"high\",\n\n      purpose:\n        \"Purpose supported by the selected tool capability.\",\n\n      tool:\n        \"get_signins\",\n\n      parameters: {\n        user:\n          \"user@example.com\"\n      },\n\n      evidence_target:\n        \"Evidence explicitly supported by the selected tool.\"\n    }\n  ]\n};\n\n\n// --------------------------------------------------\n// 5. System prompt\n// --------------------------------------------------\n\nconst systemPrompt =\n  \"You are repairing an invalid cybersecurity investigation plan. \" +\n\n  \"The previous plan was rejected by deterministic security validation. \" +\n\n  \"You must correct the plan according to the validation errors. \" +\n\n  \"Do not defend the previous plan. \" +\n\n  \"Do not ignore validation errors. \" +\n\n  \"Do not invent tools, entities, evidence, relationships, or capabilities. \" +\n\n  \"Every investigation step must use a tool only for its explicitly documented capabilities. \" +\n\n  \"If no available tool can collect a required piece of evidence, omit that executable step. \" +\n\n  \"Return only valid JSON. \" +\n\n  \"Do not use Markdown, code fences, comments, or explanatory text outside the JSON object.\";\n\n\n// --------------------------------------------------\n// 6. Repair prompt\n// --------------------------------------------------\n\nconst userPrompt =\n  \"Repair the rejected SOC investigation plan. \" +\n\n  \"VALIDATED ANALYSIS: \" +\n  JSON.stringify(analysis) +\n  \". \" +\n\n  \"REJECTED PLAN: \" +\n  JSON.stringify(validationResult.plan) +\n  \". \" +\n\n  \"VALIDATION ERRORS: \" +\n  JSON.stringify(validationResult.errors) +\n  \". \" +\n\n  \"AVAILABLE TOOL CAPABILITIES: \" +\n  JSON.stringify(allowedTools) +\n  \". \" +\n\n  \"Return exactly one corrected JSON object matching this structure: \" +\n  JSON.stringify(expectedOutput) +\n  \". \" +\n\n  \"MANDATORY REPAIR RULES: \" +\n\n  \"1. Correct every validation error. \" +\n\n  \"2. plan_version must be '1.0'. \" +\n\n  \"3. alert_id must remain exactly equal to the validated analysis alert_id. \" +\n\n  \"4. Keep only executable investigation steps supported by available tools. \" +\n\n  \"5. Do not use get_ip_reputation to determine whether Spain, Netherlands, or another geographic observation corresponds to an IP address. \" +\n\n  \"6. get_ip_reputation may only request threat intelligence or reputation evidence for an observed IP. \" +\n\n  \"7. get_signins may retrieve historical authentication activity for an observed user. \" +\n\n  \"8. get_endpoint_activity may retrieve endpoint evidence for an observed host. \" +\n\n  \"9. Never invent parameter values. \" +\n\n  \"10. If a required investigation cannot be performed with the available tools, omit that step. \" +\n\n  \"11. Renumber step_id sequentially starting from step-1 after removing or changing invalid steps. \" +\n\n  \"12. Do not perform remediation or containment actions.\";\n\n\n// --------------------------------------------------\n// 7. Ollama request\n// --------------------------------------------------\n\nreturn [\n  {\n    json: {\n      model:\n        \"qwen3:8b\",\n\n      messages: [\n        {\n          role:\n            \"system\",\n\n          content:\n            systemPrompt\n        },\n        {\n          role:\n            \"user\",\n\n          content:\n            userPrompt\n        }\n      ],\n\n      stream:\n        false,\n\n      think:\n        false,\n\n      keep_alive:\n        \"5m\",\n\n      format:\n        \"json\"\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        96
+      ],
+      "id": "9213f43f-c0cb-43ef-9b17-ae7cdb6fe1b4",
+      "name": "Plan Repair Request Builder"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ollama:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1568,
+        96
+      ],
+      "id": "e3e5c597-12da-40b1-b2d5-e110a594d287",
+      "name": "Ollama Plan Repair"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// Investigation Plan Validator\n//\n// Purpose:\n// Validate an LLM-generated investigation plan\n// without stopping the workflow.\n//\n// Output:\n// {\n//   valid: boolean,\n//   errors: [],\n//   plan: {},\n//   validation_metadata: {}\n// }\n//\n// LLM output is always treated as untrusted input.\n// ==================================================\n\n\n// --------------------------------------------------\n// 1. Extract Ollama response\n// --------------------------------------------------\n\nconst response = $json;\n\nconst content = response?.message?.content;\n\n\n// --------------------------------------------------\n// 2. Prepare validation result\n// --------------------------------------------------\n\nconst errors = [];\n\nlet plan = null;\n\n\n// --------------------------------------------------\n// 3. Validate message.content\n// --------------------------------------------------\n\nif (\n  !content ||\n  typeof content !== \"string\"\n) {\n  errors.push(\n    \"message.content is missing or empty\"\n  );\n}\n\n\n// --------------------------------------------------\n// 4. Parse LLM JSON\n// --------------------------------------------------\n\nif (errors.length === 0) {\n  try {\n    plan = JSON.parse(content);\n  } catch (error) {\n    errors.push(\n      `response is not valid JSON: ${error.message}`\n    );\n  }\n}\n\n\n// --------------------------------------------------\n// 5. Retrieve validated canonical analysis\n// --------------------------------------------------\n\nconst analysis =\n  $(\"Canonical Analysis Input\").first().json;\n\n\n// --------------------------------------------------\n// 6. Helper functions\n// --------------------------------------------------\n\nfunction requireString(field, value) {\n  if (\n    typeof value !== \"string\" ||\n    value.trim() === \"\"\n  ) {\n    errors.push(\n      `${field} must be a non-empty string`\n    );\n  }\n}\n\n\nfunction containsAny(text, patterns) {\n  if (typeof text !== \"string\") {\n    return false;\n  }\n\n  const normalized =\n    text.toLowerCase();\n\n  return patterns.some(\n    pattern =>\n      normalized.includes(\n        pattern.toLowerCase()\n      )\n  );\n}\n\n\n// --------------------------------------------------\n// 7. Extract allowed entities\n// --------------------------------------------------\n\nconst allowedUsers = new Set();\nconst allowedHosts = new Set();\nconst allowedIps = new Set();\n\nfor (\n  const evidence\n  of analysis.observed_evidence || []\n) {\n\n  if (\n    !evidence ||\n    typeof evidence !== \"object\"\n  ) {\n    continue;\n  }\n\n  const field =\n    evidence.field;\n\n  const value =\n    evidence.value;\n\n  const values =\n    Array.isArray(value)\n      ? value\n      : [value];\n\n  for (const item of values) {\n\n    if (\n      item === null ||\n      item === undefined\n    ) {\n      continue;\n    }\n\n    const normalized =\n      String(item).trim();\n\n    if (!normalized) {\n      continue;\n    }\n\n    if (field === \"users\") {\n      allowedUsers.add(normalized);\n    }\n\n    if (field === \"hosts\") {\n      allowedHosts.add(normalized);\n    }\n\n    if (\n      field === \"source_ips\" ||\n      field === \"destination_ips\" ||\n      field === \"related_ips\"\n    ) {\n      allowedIps.add(normalized);\n    }\n  }\n}\n\n\n// --------------------------------------------------\n// 8. Tool policies\n// --------------------------------------------------\n\nconst toolPolicies = {\n\n  get_signins: {\n    requiredParameters: [\n      \"user\"\n    ],\n\n    allowedParameters: [\n      \"user\"\n    ],\n\n    entityValidation: {\n      parameter: \"user\",\n      allowedValues: allowedUsers\n    },\n\n    forbiddenPurposePatterns: [\n      \"endpoint activity\",\n      \"email activity\",\n      \"malicious reputation\",\n      \"ip reputation\"\n    ],\n\n    forbiddenEvidencePatterns: [\n      \"endpoint telemetry\",\n      \"email activity\",\n      \"ip reputation\"\n    ]\n  },\n\n\n  get_ip_reputation: {\n    requiredParameters: [\n      \"ip\"\n    ],\n\n    allowedParameters: [\n      \"ip\"\n    ],\n\n    entityValidation: {\n      parameter: \"ip\",\n      allowedValues: allowedIps\n    },\n\n    forbiddenPurposePatterns: [\n      \"geographic\",\n      \"geolocation\",\n      \"country\",\n      \"location\",\n      \"associated with the reported geographic\",\n      \"linked to the reported geographic\",\n      \"authenticated from\"\n    ],\n\n    forbiddenEvidencePatterns: [\n      \"geographic mapping\",\n      \"geolocation mapping\",\n      \"country mapping\",\n      \"authenticated from\",\n      \"user location\"\n    ]\n  },\n\n\n  get_endpoint_activity: {\n    requiredParameters: [\n      \"host\"\n    ],\n\n    allowedParameters: [\n      \"host\"\n    ],\n\n    entityValidation: {\n      parameter: \"host\",\n      allowedValues: allowedHosts\n    },\n\n    forbiddenPurposePatterns: [\n      \"historical sign-in\",\n      \"email activity\",\n      \"ip reputation\",\n      \"geographic mapping\"\n    ],\n\n    forbiddenEvidencePatterns: [\n      \"historical sign-in\",\n      \"ip reputation\",\n      \"email activity\"\n    ]\n  },\n\n\n  get_user_activity: {\n    requiredParameters: [\n      \"user\"\n    ],\n\n    allowedParameters: [\n      \"user\"\n    ],\n\n    entityValidation: {\n      parameter: \"user\",\n      allowedValues: allowedUsers\n    },\n\n    forbiddenPurposePatterns: [\n      \"endpoint telemetry\",\n      \"ip reputation\",\n      \"geographic mapping\"\n    ],\n\n    forbiddenEvidencePatterns: [\n      \"endpoint telemetry\",\n      \"ip reputation\"\n    ]\n  },\n\n\n  get_mail_activity: {\n    requiredParameters: [\n      \"user\"\n    ],\n\n    allowedParameters: [\n      \"user\"\n    ],\n\n    entityValidation: {\n      parameter: \"user\",\n      allowedValues: allowedUsers\n    },\n\n    forbiddenPurposePatterns: [\n      \"endpoint telemetry\",\n      \"historical sign-in\",\n      \"ip reputation\",\n      \"geographic mapping\"\n    ],\n\n    forbiddenEvidencePatterns: [\n      \"endpoint telemetry\",\n      \"historical sign-in\",\n      \"ip reputation\"\n    ]\n  }\n};\n\n\n// --------------------------------------------------\n// 9. Validate parsed plan\n// --------------------------------------------------\n\nif (\n  plan !== null &&\n  typeof plan === \"object\" &&\n  !Array.isArray(plan)\n) {\n\n  // ----------------------------------------------\n  // Plan version\n  // ----------------------------------------------\n\n  if (plan.plan_version !== \"1.0\") {\n    errors.push(\n      \"plan_version must be '1.0'\"\n    );\n  }\n\n\n  // ----------------------------------------------\n  // Alert ID\n  // ----------------------------------------------\n\n  requireString(\n    \"alert_id\",\n    plan.alert_id\n  );\n\n\n  if (\n    typeof plan.alert_id === \"string\" &&\n    plan.alert_id !== analysis.alert_id\n  ) {\n    errors.push(\n      \"alert_id does not match the validated analysis\"\n    );\n  }\n\n\n  // ----------------------------------------------\n  // Objective\n  // ----------------------------------------------\n\n  requireString(\n    \"objective\",\n    plan.objective\n  );\n\n\n  // ----------------------------------------------\n  // Investigation steps\n  // ----------------------------------------------\n\n  if (\n    !Array.isArray(\n      plan.investigation_steps\n    )\n  ) {\n    errors.push(\n      \"investigation_steps must be an array\"\n    );\n  } else {\n\n    if (\n      plan.investigation_steps.length === 0\n    ) {\n      errors.push(\n        \"investigation_steps must contain at least one step\"\n      );\n    }\n\n\n    const validPriorities = [\n      \"high\",\n      \"medium\",\n      \"low\"\n    ];\n\n\n    plan.investigation_steps.forEach(\n      (step, index) => {\n\n        const prefix =\n          `investigation_steps[${index}]`;\n\n\n        // ----------------------------------------\n        // Step object\n        // ----------------------------------------\n\n        if (\n          typeof step !== \"object\" ||\n          step === null ||\n          Array.isArray(step)\n        ) {\n          errors.push(\n            `${prefix} must be an object`\n          );\n\n          return;\n        }\n\n\n        // ----------------------------------------\n        // Sequential step ID\n        // ----------------------------------------\n\n        const expectedStepId =\n          `step-${index + 1}`;\n\n        if (\n          step.step_id !== expectedStepId\n        ) {\n          errors.push(\n            `${prefix}.step_id must be '${expectedStepId}'`\n          );\n        }\n\n\n        // ----------------------------------------\n        // Priority\n        // ----------------------------------------\n\n        if (\n          !validPriorities.includes(\n            step.priority\n          )\n        ) {\n          errors.push(\n            `${prefix}.priority contains an invalid value`\n          );\n        }\n\n\n        // ----------------------------------------\n        // Purpose\n        // ----------------------------------------\n\n        requireString(\n          `${prefix}.purpose`,\n          step.purpose\n        );\n\n\n        // ----------------------------------------\n        // Evidence target\n        // ----------------------------------------\n\n        requireString(\n          `${prefix}.evidence_target`,\n          step.evidence_target\n        );\n\n\n        // ----------------------------------------\n        // Tool allowlist\n        // ----------------------------------------\n\n        if (\n          typeof step.tool !== \"string\" ||\n          !Object.prototype.hasOwnProperty.call(\n            toolPolicies,\n            step.tool\n          )\n        ) {\n          errors.push(\n            `${prefix}.tool '${step.tool}' is not allowed`\n          );\n\n          return;\n        }\n\n\n        const policy =\n          toolPolicies[step.tool];\n\n\n        // ----------------------------------------\n        // Parameters\n        // ----------------------------------------\n\n        if (\n          typeof step.parameters !== \"object\" ||\n          step.parameters === null ||\n          Array.isArray(step.parameters)\n        ) {\n          errors.push(\n            `${prefix}.parameters must be an object`\n          );\n\n          return;\n        }\n\n\n        // ----------------------------------------\n        // Required parameters\n        // ----------------------------------------\n\n        for (\n          const requiredParameter\n          of policy.requiredParameters\n        ) {\n\n          if (\n            !Object.prototype.hasOwnProperty.call(\n              step.parameters,\n              requiredParameter\n            )\n          ) {\n            errors.push(\n              `${prefix}.parameters.${requiredParameter} is required for ${step.tool}`\n            );\n          }\n        }\n\n\n        // ----------------------------------------\n        // Unexpected parameters\n        // ----------------------------------------\n\n        for (\n          const parameterName\n          of Object.keys(\n            step.parameters\n          )\n        ) {\n\n          if (\n            !policy.allowedParameters.includes(\n              parameterName\n            )\n          ) {\n            errors.push(\n              `${prefix}.parameters.${parameterName} is not allowed for ${step.tool}`\n            );\n          }\n        }\n\n\n        // ----------------------------------------\n        // Entity validation\n        // ----------------------------------------\n\n        const entityRule =\n          policy.entityValidation;\n\n        if (entityRule) {\n\n          const value =\n            step.parameters[\n              entityRule.parameter\n            ];\n\n          if (\n            typeof value !== \"string\" ||\n            value.trim() === \"\"\n          ) {\n            errors.push(\n              `${prefix}.parameters.${entityRule.parameter} must be a non-empty string`\n            );\n          } else if (\n            !entityRule.allowedValues.has(\n              value\n            )\n          ) {\n            errors.push(\n              `${prefix}.parameters.${entityRule.parameter} contains an entity not present in observed evidence: ${value}`\n            );\n          }\n        }\n\n\n        // ----------------------------------------\n        // Semantic capability validation\n        // ----------------------------------------\n\n        if (\n          policy.forbiddenPurposePatterns &&\n          containsAny(\n            step.purpose,\n            policy.forbiddenPurposePatterns\n          )\n        ) {\n          errors.push(\n            `${prefix}: tool '${step.tool}' is being used for a purpose outside its allowed capabilities`\n          );\n        }\n\n\n        if (\n          policy.forbiddenEvidencePatterns &&\n          containsAny(\n            step.evidence_target,\n            policy.forbiddenEvidencePatterns\n          )\n        ) {\n          errors.push(\n            `${prefix}: evidence_target requests evidence outside the capabilities of '${step.tool}'`\n          );\n        }\n      }\n    );\n  }\n\n} else if (plan !== null) {\n\n  errors.push(\n    \"investigation plan must be a JSON object\"\n  );\n}\n\n\n// --------------------------------------------------\n// 10. Final validation result\n// --------------------------------------------------\n\nconst valid =\n  errors.length === 0;\n\n\n// --------------------------------------------------\n// 11. Controlled output\n// --------------------------------------------------\n\nreturn [\n  {\n    json: {\n      valid,\n\n      errors,\n\n      plan,\n\n      validation_metadata: {\n        validator:\n          \"investigation_plan_validator\",\n\n        validator_version:\n          \"1.0\",\n\n        validated_at:\n          new Date().toISOString(),\n\n        error_count:\n          errors.length\n      }\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        96
+      ],
+      "id": "191baf84-c864-46bf-9884-2d77047a8192",
+      "name": "Repaired Plan Validator"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Canonical Analysis Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Canonical Analysis Input": {
+      "main": [
+        [
+          {
+            "node": "Investigation Planner Request Builder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Investigation Planner Request Builder": {
+      "main": [
+        [
+          {
+            "node": "Ollama Investigation Planner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Investigation Planner": {
+      "main": [
+        [
+          {
+            "node": "Investigation Plan Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Investigation Plan Validator": {
+      "main": [
+        [
+          {
+            "node": "Investigation Plan Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Investigation Plan Valid?": {
+      "main": [
+        [
+          {
+            "node": "Valid Investigation Plan",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Plan Repair Request Builder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan Repair Request Builder": {
+      "main": [
+        [
+          {
+            "node": "Ollama Plan Repair",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Plan Repair": {
+      "main": [
+        [
+          {
+            "node": "Repaired Plan Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "871dc323-a286-4e41-b075-335dad6a7ee6",
+  "meta": {
+    "instanceId": "b2d82f9ccdb8bc424a72b8529b63d9b32a1170e9eed34f0a8c38afe810fb7c9d"
+  },
+  "nodeGroups": [],
+  "id": "bv6p2MKUSpdqZiTr",
+  "tags": []
+}
