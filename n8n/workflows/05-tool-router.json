@@ -1,0 +1,291 @@
+{
+  "name": "05 - Tool Router",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "9493d9cb-88ff-4b52-aaf7-9a7e1ce7b4e0",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    json: {\n      alert_id: \"ALERT-0001\",\n      step_id: \"step-1\",\n\n      tool: \"get_signins\",\n\n      parameters: {\n        user: \"john.doe@example.com\"\n      }\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "id": "f131c43f-0234-43b5-b94c-07add7cf5fdb",
+      "name": "Manual Tool Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// Tool Request Validator\n//\n// Validates a tool execution request before routing.\n//\n// Current supported tool:\n// - get_signins\n//\n// Tool requests are treated as untrusted input.\n// ==================================================\n\nconst request = $json;\n\nconst errors = [];\n\n\n// --------------------------------------------------\n// 1. Helper functions\n// --------------------------------------------------\n\nfunction requireString(field, value) {\n  if (\n    typeof value !== \"string\" ||\n    value.trim() === \"\"\n  ) {\n    errors.push(\n      `${field} must be a non-empty string`\n    );\n  }\n}\n\n\n// --------------------------------------------------\n// 2. Basic request validation\n// --------------------------------------------------\n\nrequireString(\n  \"alert_id\",\n  request.alert_id\n);\n\nrequireString(\n  \"step_id\",\n  request.step_id\n);\n\nrequireString(\n  \"tool\",\n  request.tool\n);\n\n\n// --------------------------------------------------\n// 3. step_id format\n// --------------------------------------------------\n\nif (\n  typeof request.step_id === \"string\" &&\n  !/^step-[0-9]+$/.test(request.step_id)\n) {\n  errors.push(\n    \"step_id must match the format step-N\"\n  );\n}\n\n\n// --------------------------------------------------\n// 4. Parameters object\n// --------------------------------------------------\n\nif (\n  typeof request.parameters !== \"object\" ||\n  request.parameters === null ||\n  Array.isArray(request.parameters)\n) {\n  errors.push(\n    \"parameters must be an object\"\n  );\n}\n\n\n// --------------------------------------------------\n// 5. Tool policies\n// --------------------------------------------------\n\nconst toolPolicies = {\n\n  get_signins: {\n    requiredParameters: [\n      \"user\"\n    ],\n\n    allowedParameters: [\n      \"user\",\n      \"time_range\",\n      \"limit\"\n    ]\n  }\n\n};\n\n\n// --------------------------------------------------\n// 6. Tool allowlist\n// --------------------------------------------------\n\nif (\n  typeof request.tool === \"string\" &&\n  !Object.prototype.hasOwnProperty.call(\n    toolPolicies,\n    request.tool\n  )\n) {\n  errors.push(\n    `tool '${request.tool}' is not supported`\n  );\n}\n\n\n// --------------------------------------------------\n// 7. Tool-specific parameter validation\n// --------------------------------------------------\n\nif (\n  typeof request.tool === \"string\" &&\n  Object.prototype.hasOwnProperty.call(\n    toolPolicies,\n    request.tool\n  ) &&\n  typeof request.parameters === \"object\" &&\n  request.parameters !== null &&\n  !Array.isArray(request.parameters)\n) {\n\n  const policy =\n    toolPolicies[request.tool];\n\n\n  // ----------------------------------------------\n  // Required parameters\n  // ----------------------------------------------\n\n  for (\n    const parameter\n    of policy.requiredParameters\n  ) {\n    if (\n      !Object.prototype.hasOwnProperty.call(\n        request.parameters,\n        parameter\n      )\n    ) {\n      errors.push(\n        `parameters.${parameter} is required for ${request.tool}`\n      );\n    }\n  }\n\n\n  // ----------------------------------------------\n  // Unexpected parameters\n  // ----------------------------------------------\n\n  for (\n    const parameter\n    of Object.keys(request.parameters)\n  ) {\n    if (\n      !policy.allowedParameters.includes(\n        parameter\n      )\n    ) {\n      errors.push(\n        `parameters.${parameter} is not allowed for ${request.tool}`\n      );\n    }\n  }\n}\n\n\n// --------------------------------------------------\n// 8. get_signins validation\n// --------------------------------------------------\n\nif (\n  request.tool === \"get_signins\" &&\n  typeof request.parameters === \"object\" &&\n  request.parameters !== null &&\n  !Array.isArray(request.parameters)\n) {\n\n  const {\n    user,\n    time_range,\n    limit\n  } = request.parameters;\n\n\n  // ----------------------------------------------\n  // user\n  // ----------------------------------------------\n\n  if (\n    typeof user !== \"string\" ||\n    user.trim() === \"\"\n  ) {\n    errors.push(\n      \"parameters.user must be a non-empty string\"\n    );\n  }\n\n  if (\n    typeof user === \"string\" &&\n    user.length > 320\n  ) {\n    errors.push(\n      \"parameters.user must not exceed 320 characters\"\n    );\n  }\n\n\n  // ----------------------------------------------\n  // limit\n  // ----------------------------------------------\n\n  if (limit !== undefined) {\n\n    if (\n      !Number.isInteger(limit) ||\n      limit < 1 ||\n      limit > 500\n    ) {\n      errors.push(\n        \"parameters.limit must be an integer between 1 and 500\"\n      );\n    }\n  }\n\n\n  // ----------------------------------------------\n  // time_range\n  // ----------------------------------------------\n\n  if (time_range !== undefined) {\n\n    if (\n      typeof time_range !== \"object\" ||\n      time_range === null ||\n      Array.isArray(time_range)\n    ) {\n      errors.push(\n        \"parameters.time_range must be an object\"\n      );\n    } else {\n\n      const allowedTimeRangeFields = [\n        \"start\",\n        \"end\"\n      ];\n\n      for (\n        const field\n        of Object.keys(time_range)\n      ) {\n        if (\n          !allowedTimeRangeFields.includes(field)\n        ) {\n          errors.push(\n            `parameters.time_range.${field} is not allowed`\n          );\n        }\n      }\n\n\n      if (\n        typeof time_range.start !== \"string\" ||\n        Number.isNaN(\n          Date.parse(time_range.start)\n        )\n      ) {\n        errors.push(\n          \"parameters.time_range.start must be a valid ISO 8601 timestamp\"\n        );\n      }\n\n\n      if (\n        typeof time_range.end !== \"string\" ||\n        Number.isNaN(\n          Date.parse(time_range.end)\n        )\n      ) {\n        errors.push(\n          \"parameters.time_range.end must be a valid ISO 8601 timestamp\"\n        );\n      }\n\n\n      if (\n        typeof time_range.start === \"string\" &&\n        typeof time_range.end === \"string\" &&\n        !Number.isNaN(Date.parse(time_range.start)) &&\n        !Number.isNaN(Date.parse(time_range.end)) &&\n        Date.parse(time_range.start) >\n          Date.parse(time_range.end)\n      ) {\n        errors.push(\n          \"parameters.time_range.start must be before or equal to end\"\n        );\n      }\n    }\n  }\n}\n\n\n// --------------------------------------------------\n// 9. Controlled validation output\n// --------------------------------------------------\n\nreturn [\n  {\n    json: {\n      valid:\n        errors.length === 0,\n\n      errors,\n\n      request\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ],
+      "id": "18c43042-916b-462c-ade8-04babab6d29e",
+      "name": "Tool Request Validator"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "dd0e291a-b9e0-4edd-bcbb-cdfacc8d5a49",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        672,
+        0
+      ],
+      "id": "839c8456-57eb-4109-8525-c13ccd37d243",
+      "name": "Tool Request Valid?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const validationResult = $json;\n\nreturn [\n  {\n    json: {\n      status: \"rejected\",\n\n      reason:\n        \"tool_request_validation_failed\",\n\n      errors:\n        validationResult.errors || [],\n\n      request:\n        validationResult.request || null\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        96
+      ],
+      "id": "3afbeb59-f575-4305-91c5-ef26942590e2",
+      "name": "Rejected Tool Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const validationResult = $json;\n\nif (validationResult.valid !== true) {\n  throw new Error(\n    \"Validated Tool Request received an invalid request\"\n  );\n}\n\nreturn [\n  {\n    json: validationResult.request\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        -96
+      ],
+      "id": "714bf6e5-32b3-4302-8375-f83c553fb835",
+      "name": "Validated Tool Request"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tool }}",
+                    "rightValue": "get_signins",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "d844cd9b-4517-4b60-a801-f807269b45f1"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": "=",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1120,
+        -96
+      ],
+      "id": "7ef8ce97-673c-4956-a439-2225a1bf7115",
+      "name": "Tool Router"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// get_signins Mock Connector\n//\n// Simulates a security data source.\n//\n// No real API call is performed.\n// ==================================================\n\nconst request = $json;\n\nconst parameters =\n  request.parameters || {};\n\nconst user =\n  parameters.user;\n\nconst timeRange =\n  parameters.time_range || null;\n\nconst limit =\n  parameters.limit || 100;\n\n\n// --------------------------------------------------\n// Simulated provider events\n// --------------------------------------------------\n\nconst simulatedEvents = [\n\n  {\n    timestamp:\n      \"2026-08-23T17:20:00Z\",\n\n    user:\n      \"john.doe@example.com\",\n\n    source_ip:\n      \"185.220.101.20\",\n\n    status:\n      \"success\",\n\n    authentication_method:\n      \"MFA\",\n\n    application:\n      \"Microsoft 365\",\n\n    device:\n      \"WIN11-LAPTOP-01\",\n\n    location: {\n      country:\n        \"Spain\",\n\n      city:\n        \"Madrid\"\n    }\n  },\n\n\n  {\n    timestamp:\n      \"2026-08-23T17:42:00Z\",\n\n    user:\n      \"john.doe@example.com\",\n\n    source_ip:\n      \"91.198.174.20\",\n\n    status:\n      \"success\",\n\n    authentication_method:\n      \"MFA\",\n\n    application:\n      \"Microsoft 365\",\n\n    device:\n      null,\n\n    location: {\n      country:\n        \"Netherlands\",\n\n      city:\n        \"Amsterdam\"\n    }\n  }\n\n];\n\n\n// --------------------------------------------------\n// Filter by requested user\n// --------------------------------------------------\n\nlet events =\n  simulatedEvents.filter(\n    event =>\n      event.user === user\n  );\n\n\n// --------------------------------------------------\n// Optional time range\n// --------------------------------------------------\n\nif (timeRange) {\n\n  const start =\n    Date.parse(timeRange.start);\n\n  const end =\n    Date.parse(timeRange.end);\n\n  events =\n    events.filter(event => {\n\n      const timestamp =\n        Date.parse(event.timestamp);\n\n      return (\n        timestamp >= start &&\n        timestamp <= end\n      );\n    });\n}\n\n\n// --------------------------------------------------\n// Apply limit\n// --------------------------------------------------\n\nevents =\n  events.slice(0, limit);\n\n\n// --------------------------------------------------\n// Canonical tool result\n// --------------------------------------------------\n\nreturn [\n  {\n    json: {\n      tool:\n        \"get_signins\",\n\n      tool_version:\n        \"1.0\",\n\n      status:\n        \"success\",\n\n      query: {\n        user,\n        time_range:\n          timeRange\n      },\n\n      result_count:\n        events.length,\n\n      events,\n\n      error:\n        null\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        -96
+      ],
+      "id": "b0925f26-ffc4-4b31-b236-f88dd4996ffe",
+      "name": "get_signins Mock"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// get_signins Output Validator\n//\n// Deterministically validates the canonical output\n// produced by the get_signins connector.\n// ==================================================\n\nconst result = $json;\n\nconst errors = [];\n\n\n// --------------------------------------------------\n// Helpers\n// --------------------------------------------------\n\nfunction requireString(field, value) {\n  if (\n    typeof value !== \"string\" ||\n    value.trim() === \"\"\n  ) {\n    errors.push(\n      `${field} must be a non-empty string`\n    );\n  }\n}\n\n\nfunction validDate(value) {\n  return (\n    typeof value === \"string\" &&\n    !Number.isNaN(Date.parse(value))\n  );\n}\n\n\n// --------------------------------------------------\n// Top-level validation\n// --------------------------------------------------\n\nif (result.tool !== \"get_signins\") {\n  errors.push(\n    \"tool must be 'get_signins'\"\n  );\n}\n\n\nif (result.tool_version !== \"1.0\") {\n  errors.push(\n    \"tool_version must be '1.0'\"\n  );\n}\n\n\nconst validStatuses = [\n  \"success\",\n  \"partial\",\n  \"error\"\n];\n\nif (\n  !validStatuses.includes(\n    result.status\n  )\n) {\n  errors.push(\n    \"status contains an invalid value\"\n  );\n}\n\n\n// --------------------------------------------------\n// Query validation\n// --------------------------------------------------\n\nif (\n  typeof result.query !== \"object\" ||\n  result.query === null ||\n  Array.isArray(result.query)\n) {\n  errors.push(\n    \"query must be an object\"\n  );\n} else {\n\n  requireString(\n    \"query.user\",\n    result.query.user\n  );\n\n\n  if (\n    result.query.time_range !== null &&\n    result.query.time_range !== undefined\n  ) {\n\n    if (\n      typeof result.query.time_range !== \"object\" ||\n      Array.isArray(result.query.time_range)\n    ) {\n      errors.push(\n        \"query.time_range must be an object or null\"\n      );\n    } else {\n\n      if (\n        !validDate(\n          result.query.time_range.start\n        )\n      ) {\n        errors.push(\n          \"query.time_range.start must be a valid timestamp\"\n        );\n      }\n\n      if (\n        !validDate(\n          result.query.time_range.end\n        )\n      ) {\n        errors.push(\n          \"query.time_range.end must be a valid timestamp\"\n        );\n      }\n    }\n  }\n}\n\n\n// --------------------------------------------------\n// result_count\n// --------------------------------------------------\n\nif (\n  !Number.isInteger(\n    result.result_count\n  ) ||\n  result.result_count < 0\n) {\n  errors.push(\n    \"result_count must be a non-negative integer\"\n  );\n}\n\n\n// --------------------------------------------------\n// events\n// --------------------------------------------------\n\nif (!Array.isArray(result.events)) {\n\n  errors.push(\n    \"events must be an array\"\n  );\n\n} else {\n\n  if (\n    Number.isInteger(result.result_count) &&\n    result.result_count !==\n      result.events.length\n  ) {\n    errors.push(\n      \"result_count does not match events.length\"\n    );\n  }\n\n\n  const validEventStatuses = [\n    \"success\",\n    \"failure\",\n    \"unknown\"\n  ];\n\n\n  result.events.forEach(\n    (event, index) => {\n\n      const prefix =\n        `events[${index}]`;\n\n\n      if (\n        typeof event !== \"object\" ||\n        event === null ||\n        Array.isArray(event)\n      ) {\n        errors.push(\n          `${prefix} must be an object`\n        );\n\n        return;\n      }\n\n\n      if (\n        !validDate(\n          event.timestamp\n        )\n      ) {\n        errors.push(\n          `${prefix}.timestamp must be a valid timestamp`\n        );\n      }\n\n\n      requireString(\n        `${prefix}.user`,\n        event.user\n      );\n\n\n      if (\n        event.source_ip !== null &&\n        typeof event.source_ip !== \"string\"\n      ) {\n        errors.push(\n          `${prefix}.source_ip must be a string or null`\n        );\n      }\n\n\n      if (\n        !validEventStatuses.includes(\n          event.status\n        )\n      ) {\n        errors.push(\n          `${prefix}.status contains an invalid value`\n        );\n      }\n\n\n      if (\n        event.authentication_method !== null &&\n        event.authentication_method !== undefined &&\n        typeof event.authentication_method !== \"string\"\n      ) {\n        errors.push(\n          `${prefix}.authentication_method must be a string or null`\n        );\n      }\n\n\n      if (\n        event.application !== null &&\n        event.application !== undefined &&\n        typeof event.application !== \"string\"\n      ) {\n        errors.push(\n          `${prefix}.application must be a string or null`\n        );\n      }\n\n\n      if (\n        event.device !== null &&\n        event.device !== undefined &&\n        typeof event.device !== \"string\"\n      ) {\n        errors.push(\n          `${prefix}.device must be a string or null`\n        );\n      }\n\n\n      if (\n        event.location !== null &&\n        event.location !== undefined\n      ) {\n\n        if (\n          typeof event.location !== \"object\" ||\n          Array.isArray(event.location)\n        ) {\n          errors.push(\n            `${prefix}.location must be an object or null`\n          );\n        } else {\n\n          if (\n            event.location.country !== null &&\n            event.location.country !== undefined &&\n            typeof event.location.country !== \"string\"\n          ) {\n            errors.push(\n              `${prefix}.location.country must be a string or null`\n            );\n          }\n\n\n          if (\n            event.location.city !== null &&\n            event.location.city !== undefined &&\n            typeof event.location.city !== \"string\"\n          ) {\n            errors.push(\n              `${prefix}.location.city must be a string or null`\n            );\n          }\n        }\n      }\n    }\n  );\n}\n\n\n// --------------------------------------------------\n// error\n// --------------------------------------------------\n\nif (\n  result.error !== null &&\n  result.error !== undefined\n) {\n\n  if (\n    typeof result.error !== \"object\" ||\n    Array.isArray(result.error)\n  ) {\n    errors.push(\n      \"error must be an object or null\"\n    );\n  } else {\n\n    requireString(\n      \"error.code\",\n      result.error.code\n    );\n\n    requireString(\n      \"error.message\",\n      result.error.message\n    );\n  }\n}\n\n\n// --------------------------------------------------\n// Reject invalid connector output\n// --------------------------------------------------\n\nif (errors.length > 0) {\n  throw new Error(\n    `get_signins output validation failed: ${errors.join(\"; \")}`\n  );\n}\n\n\n// --------------------------------------------------\n// Canonical result\n// --------------------------------------------------\n\nreturn [\n  {\n    json: result\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        -96
+      ],
+      "id": "52fdd2b3-eb9d-4beb-8d8b-b46cf8bcfb43",
+      "name": "get_signins Output Validator"
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $json;\n\nreturn [\n  {\n    json: {\n      evidence_version:\n        \"1.0\",\n\n      source:\n        \"tool\",\n\n      tool:\n        result.tool,\n\n      tool_version:\n        result.tool_version,\n\n      status:\n        result.status,\n\n      query:\n        result.query,\n\n      result_count:\n        result.result_count,\n\n      evidence:\n        result.events,\n\n      error:\n        result.error\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        -96
+      ],
+      "id": "e3a22042-26e1-4c4d-9d9f-6d0fcac3fe39",
+      "name": "Canonical Tool Result"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Manual Tool Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Tool Request": {
+      "main": [
+        [
+          {
+            "node": "Tool Request Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool Request Validator": {
+      "main": [
+        [
+          {
+            "node": "Tool Request Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool Request Valid?": {
+      "main": [
+        [
+          {
+            "node": "Validated Tool Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rejected Tool Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validated Tool Request": {
+      "main": [
+        [
+          {
+            "node": "Tool Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool Router": {
+      "main": [
+        [
+          {
+            "node": "get_signins Mock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_signins Mock": {
+      "main": [
+        [
+          {
+            "node": "get_signins Output Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_signins Output Validator": {
+      "main": [
+        [
+          {
+            "node": "Canonical Tool Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "9989dc35-8d18-4a4f-847b-bd3b894f9121",
+  "meta": {
+    "instanceId": "b2d82f9ccdb8bc424a72b8529b63d9b32a1170e9eed34f0a8c38afe810fb7c9d"
+  },
+  "nodeGroups": [],
+  "id": "ajGzLfUa5Fkvt7xI",
+  "tags": []
+}
