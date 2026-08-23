@@ -97,7 +97,11 @@ La guía completa está disponible en:
    Integración n8n -> Ollama -> Qwen3 8B.
 
 3. [`docs/03-normalizacion-alertas.md`](docs/03-normalizacion-alertas.md)  
-   Contrato canónico de alertas, normalización de entidades y validación de entradas.
+   Contrato canónico de alertas, normalización y validación.
+
+4. [`docs/04-analisis-llm-inicial.md`](docs/04-analisis-llm-inicial.md)  
+   Contexto de investigación, análisis estructurado con Qwen y validación determinista de la salida.
+
 
 ## Roadmap técnico
 
