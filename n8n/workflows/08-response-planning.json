@@ -1,0 +1,410 @@
+{
+  "name": "08 - Response Planning",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "977d8d7b-50f9-4804-9c9a-d9559fe86ff6",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// Canonical Investigation Result Input\n//\n// TEMPORARY MALICIOUS RESPONSE TEST.\n//\n// Simulates a validated malicious investigation result\n// so Phase 9 can test approval-required response policy.\n//\n// No action is executed by this node.\n// ==================================================\n\nreturn [\n  {\n    json: {\n\n      investigation_result_version:\n        \"1.0\",\n\n      alert_id:\n        \"ALERT-0001\",\n\n      status:\n        \"completed\",\n\n      termination_reason:\n        \"investigation_complete\",\n\n      iteration_number:\n        1,\n\n      verdict:\n        \"malicious\",\n\n      confidence:\n        0.95,\n\n      risk_assessment: {\n\n        level:\n          \"high\",\n\n        reasoning: [\n          \"Validated investigation evidence establishes unauthorized account activity.\"\n        ]\n      },\n\n      summary:\n        \"Validated evidence establishes malicious unauthorized activity associated with the account.\",\n\n      observed_evidence: [\n\n        {\n          source:\n            \"get_signins\",\n\n          field:\n            \"user\",\n\n          value:\n            \"john.doe@example.com\"\n        },\n\n        {\n          source:\n            \"get_signins\",\n\n          field:\n            \"source_ip\",\n\n          value:\n            \"185.220.101.20\"\n        },\n\n        {\n          source:\n            \"get_endpoint_activity\",\n\n          field:\n            \"host\",\n\n          value:\n            \"WIN11-LAPTOP-01\"\n        }\n      ],\n\n      correlations: [\n        {\n          description:\n            \"Validated evidence correlates the malicious activity with the affected account.\",\n          evidence_sources: [\n            \"get_signins\"\n          ]\n        }\n      ],\n\n      hypotheses:\n        [],\n\n      remaining_gaps:\n        [],\n\n      unresolved_evidence_requirements:\n        [],\n\n      execution_summary: {\n\n        remaining_gap_count:\n          0,\n\n        executable_gap_count:\n          0,\n\n        non_executable_gap_count:\n          0,\n\n        automated_investigation_complete:\n          true\n      }\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "id": "94ce58d2-3394-4cf9-90e7-9383de591250",
+      "name": "Canonical Investigation Result Input"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// Response Context Builder\n//\n// Builds the canonical context used by the response\n// planner.\n//\n// Security properties:\n// - only validated investigation output is accepted\n// - target entities are derived from observed evidence\n// - no response action is authorized here\n// - no destructive execution occurs here\n// ==================================================\n\nconst result = $json;\n\n\n// --------------------------------------------------\n// 1. Validate investigation result\n// --------------------------------------------------\n\nif (\n  !result ||\n  typeof result !== \"object\" ||\n  Array.isArray(result)\n) {\n  throw new Error(\n    \"Response Context Builder requires a canonical investigation result\"\n  );\n}\n\n\nif (\n  result.investigation_result_version !== \"1.0\"\n) {\n  throw new Error(\n    \"Response Context Builder requires investigation_result_version '1.0'\"\n  );\n}\n\n\nif (\n  typeof result.alert_id !== \"string\" ||\n  result.alert_id.trim() === \"\"\n) {\n  throw new Error(\n    \"Response Context Builder requires alert_id\"\n  );\n}\n\n\nconst validStatuses = [\n  \"completed\",\n  \"completed_with_unresolved_gaps\"\n];\n\n\nif (\n  !validStatuses.includes(\n    result.status\n  )\n) {\n  throw new Error(\n    `Response Context Builder received unsupported investigation status '${result.status}'`\n  );\n}\n\n\nconst validVerdicts = [\n  \"benign\",\n  \"suspicious\",\n  \"malicious\",\n  \"inconclusive\"\n];\n\n\nif (\n  !validVerdicts.includes(\n    result.verdict\n  )\n) {\n  throw new Error(\n    `Response Context Builder received invalid verdict '${result.verdict}'`\n  );\n}\n\n\nif (\n  typeof result.confidence !== \"number\" ||\n  Number.isNaN(result.confidence) ||\n  result.confidence < 0 ||\n  result.confidence > 1\n) {\n  throw new Error(\n    \"Response Context Builder requires confidence between 0 and 1\"\n  );\n}\n\n\nif (\n  !Array.isArray(\n    result.observed_evidence\n  )\n) {\n  throw new Error(\n    \"Response Context Builder requires observed_evidence\"\n  );\n}\n\n\n// --------------------------------------------------\n// 2. Extract response-target candidates\n// --------------------------------------------------\n//\n// Candidates are observations only.\n//\n// Their presence does NOT authorize containment.\n// --------------------------------------------------\n\nconst users =\n  new Set();\n\nconst hosts =\n  new Set();\n\nconst ips =\n  new Set();\n\nconst domains =\n  new Set();\n\nconst urls =\n  new Set();\n\nconst emails =\n  new Set();\n\n\nfor (\n  const evidence\n  of result.observed_evidence\n) {\n\n  if (\n    !evidence ||\n    typeof evidence !== \"object\" ||\n    Array.isArray(evidence)\n  ) {\n    continue;\n  }\n\n\n  const field =\n    typeof evidence.field === \"string\"\n      ? evidence.field.trim()\n      : \"\";\n\n\n  const values =\n    Array.isArray(evidence.value)\n      ? evidence.value\n      : [evidence.value];\n\n\n  for (\n    const rawValue\n    of values\n  ) {\n\n    if (\n      rawValue === null ||\n      rawValue === undefined\n    ) {\n      continue;\n    }\n\n\n    if (\n      typeof rawValue !== \"string\"\n    ) {\n      continue;\n    }\n\n\n    const value =\n      rawValue.trim();\n\n\n    if (!value) {\n      continue;\n    }\n\n\n    if (\n      field === \"user\" ||\n      field === \"users\"\n    ) {\n\n      users.add(value);\n    }\n\n\n    if (\n      field === \"host\" ||\n      field === \"hosts\" ||\n      field === \"device\"\n    ) {\n\n      hosts.add(value);\n    }\n\n\n    if (\n      field === \"source_ip\" ||\n      field === \"destination_ip\" ||\n      field === \"network.destination_ip\" ||\n      field === \"ip\"\n    ) {\n\n      ips.add(value);\n    }\n\n\n    if (\n      field === \"domain\" ||\n      field === \"domains\"\n    ) {\n\n      domains.add(value);\n    }\n\n\n    if (\n      field === \"url\" ||\n      field === \"urls\"\n    ) {\n\n      urls.add(value);\n    }\n\n\n    if (\n      field === \"email\" ||\n      field === \"sender\" ||\n      field === \"recipient\"\n    ) {\n\n      emails.add(value);\n    }\n  }\n}\n\n\n// --------------------------------------------------\n// 3. Supported response-action vocabulary\n// --------------------------------------------------\n//\n// These actions are only planner vocabulary.\n//\n// Being listed here does NOT make them executable.\n// --------------------------------------------------\n\nconst supportedActions = [\n\n  {\n    action:\n      \"no_action\",\n\n    target_types:\n      [],\n\n    destructive:\n      false\n  },\n\n\n  {\n    action:\n      \"revoke_sessions\",\n\n    target_types: [\n      \"user\"\n    ],\n\n    destructive:\n      true\n  },\n\n\n  {\n    action:\n      \"disable_user\",\n\n    target_types: [\n      \"user\"\n    ],\n\n    destructive:\n      true\n  },\n\n\n  {\n    action:\n      \"isolate_endpoint\",\n\n    target_types: [\n      \"host\"\n    ],\n\n    destructive:\n      true\n  },\n\n\n  {\n    action:\n      \"block_ip\",\n\n    target_types: [\n      \"ip\"\n    ],\n\n    destructive:\n      true\n  },\n\n\n  {\n    action:\n      \"block_domain\",\n\n    target_types: [\n      \"domain\"\n    ],\n\n    destructive:\n      true\n  },\n\n\n  {\n    action:\n      \"delete_email\",\n\n    target_types: [\n      \"email\"\n    ],\n\n    destructive:\n      true\n  }\n];\n\n\n// --------------------------------------------------\n// 4. Build canonical response-planning context\n// --------------------------------------------------\n\nconst context = {\n\n  response_context_version:\n    \"1.0\",\n\n  task:\n    \"response_planning\",\n\n  alert_id:\n    result.alert_id,\n\n  investigation: {\n\n    status:\n      result.status,\n\n    termination_reason:\n      result.termination_reason ?? null,\n\n    verdict:\n      result.verdict,\n\n    confidence:\n      result.confidence,\n\n    risk_assessment:\n      result.risk_assessment ?? null,\n\n    summary:\n      result.summary ?? \"\",\n\n    remaining_gaps:\n      Array.isArray(result.remaining_gaps)\n        ? result.remaining_gaps\n        : [],\n\n    automated_investigation_complete:\n      result\n        ?.execution_summary\n        ?.automated_investigation_complete === true\n  },\n\n  observed_evidence:\n    result.observed_evidence,\n\n  response_targets: {\n\n    users:\n      [...users],\n\n    hosts:\n      [...hosts],\n\n    ips:\n      [...ips],\n\n    domains:\n      [...domains],\n\n    urls:\n      [...urls],\n\n    emails:\n      [...emails]\n  },\n\n  supported_actions:\n    supportedActions,\n\n  policy_constraints: {\n\n    llm_may_execute_actions:\n      false,\n\n    destructive_actions_require_deterministic_policy:\n      true,\n\n    inconclusive_allows_destructive_response:\n      false,\n\n    benign_allows_destructive_response:\n      false,\n\n    suspicious_requires_policy_evaluation:\n      true,\n\n    malicious_requires_policy_evaluation:\n      true,\n\n    unknown_targets_are_forbidden:\n      true\n  }\n};\n\n\n// --------------------------------------------------\n// 5. Return context\n// --------------------------------------------------\n\nreturn [\n  {\n    json:\n      context\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ],
+      "id": "b21070b6-4ead-4e6e-9ece-f08987d83505",
+      "name": "Response Context Builder"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// Response Planner Request Builder\n//\n// Builds the LLM request for response planning.\n//\n// The LLM may PROPOSE actions only.\n// It does not authorize or execute them.\n// ==================================================\n\nconst context = $json;\n\n\n// --------------------------------------------------\n// 1. Validate context\n// --------------------------------------------------\n\nif (\n  !context ||\n  typeof context !== \"object\" ||\n  Array.isArray(context)\n) {\n  throw new Error(\n    \"Response Planner Request Builder requires a valid response context\"\n  );\n}\n\n\nif (\n  context.response_context_version !== \"1.0\"\n) {\n  throw new Error(\n    \"Response Planner Request Builder requires response_context_version '1.0'\"\n  );\n}\n\n\nif (\n  typeof context.alert_id !== \"string\" ||\n  context.alert_id.trim() === \"\"\n) {\n  throw new Error(\n    \"Response Planner Request Builder requires alert_id\"\n  );\n}\n\n\nif (\n  !context.investigation ||\n  typeof context.investigation !== \"object\" ||\n  Array.isArray(context.investigation)\n) {\n  throw new Error(\n    \"Response Planner Request Builder requires investigation\"\n  );\n}\n\n\nif (\n  !context.response_targets ||\n  typeof context.response_targets !== \"object\" ||\n  Array.isArray(context.response_targets)\n) {\n  throw new Error(\n    \"Response Planner Request Builder requires response_targets\"\n  );\n}\n\n\nif (\n  !Array.isArray(\n    context.supported_actions\n  )\n) {\n  throw new Error(\n    \"Response Planner Request Builder requires supported_actions\"\n  );\n}\n\n\n// --------------------------------------------------\n// 2. Expected response-plan structure\n// --------------------------------------------------\n\nconst expectedOutput = {\n\n  response_plan_version:\n    \"1.0\",\n\n  alert_id:\n    context.alert_id,\n\n  investigation_verdict:\n    context.investigation.verdict,\n\n  investigation_confidence:\n    context.investigation.confidence,\n\n  recommendation:\n    \"no_action\",\n\n  rationale: [\n    \"Explain the response recommendation using only the validated investigation context.\"\n  ],\n\n  proposed_actions:\n    []\n};\n\n\n// --------------------------------------------------\n// 3. System prompt\n// --------------------------------------------------\n\nconst systemPrompt =\n  \"You are a cybersecurity response planner. \" +\n\n  \"You may propose response actions, but you are not an authorization engine and you cannot execute any action. \" +\n\n  \"The supplied investigation result is authoritative. \" +\n\n  \"Do not alter, reinterpret, upgrade, or downgrade the investigation verdict. \" +\n\n  \"Do not invent targets, users, hosts, IP addresses, domains, URLs, emails, evidence, compromise, authorization, maliciousness, or response capabilities. \" +\n\n  \"Only use target entities explicitly present in response_targets. \" +\n\n  \"Only use actions explicitly listed in supported_actions. \" +\n\n  \"The presence of an entity does not itself justify taking action against that entity. \" +\n\n  \"Destructive containment must not be proposed merely because an IP, user, or host appears in evidence. \" +\n\n  \"For an inconclusive investigation verdict, do not propose destructive response actions. \" +\n\n  \"For a benign investigation verdict, do not propose destructive response actions. \" +\n\n  \"If no response action is justified, recommendation must be 'no_action' and proposed_actions must be empty. \" +\n\n  \"Return only valid JSON without Markdown or explanatory text outside the JSON object.\";\n\n\n// --------------------------------------------------\n// 4. User prompt\n// --------------------------------------------------\n\nconst userPrompt =\n  \"Create a proposed response plan from the validated response context. \" +\n\n  \"Return exactly one JSON object matching this structure: \" +\n  JSON.stringify(expectedOutput) +\n  \". \" +\n\n  \"MANDATORY RULES: \" +\n\n  \"1. response_plan_version must be exactly '1.0'. \" +\n\n  \"2. alert_id must exactly match the response context. \" +\n\n  \"3. investigation_verdict must exactly equal the supplied investigation.verdict. \" +\n\n  \"4. investigation_confidence must exactly equal the supplied investigation.confidence. \" +\n\n  \"5. recommendation must be one of: no_action, response_recommended. \" +\n\n  \"6. rationale must be an array of non-empty strings. \" +\n\n  \"7. proposed_actions must be an array. \" +\n\n  \"8. Every proposed action must contain exactly: action_id, action, target, reason, evidence_sources, priority. \" +\n\n  \"9. action_id values must be sequential: action-1, action-2, action-3, etc. \" +\n\n  \"10. action must exactly match one action listed in supported_actions. \" +\n\n  \"11. no_action must never appear inside proposed_actions. \" +\n\n  \"12. target must contain exactly type and value. \" +\n\n  \"13. target.type must be supported by the selected action. \" +\n\n  \"14. target.value must exist exactly in the corresponding response_targets array. \" +\n\n  \"15. evidence_sources must be an array of tool source names actually present in observed_evidence. \" +\n\n  \"16. priority must be one of: high, medium, low. \" +\n\n  \"17. Do not create a response action merely because a target exists. \" +\n\n  \"18. If investigation.verdict is 'inconclusive', recommendation MUST be 'no_action' and proposed_actions MUST be empty. \" +\n\n  \"19. If investigation.verdict is 'benign', recommendation MUST be 'no_action' and proposed_actions MUST be empty. \" +\n\n  \"20. A successful sign-in or successful MFA does not prove legitimacy, but an inconclusive result also does not authorize destructive containment. \" +\n\n  \"21. Suspicious or malicious verdicts may justify proposing response actions, but deterministic policy will decide whether they are permitted. \" +\n\n  \"22. Never claim that any proposed action has already been executed. \" +\n\n  \"23. Never claim approval has been granted. \" +\n\n  \"24. Return only the proposed response plan JSON object. \" +\n\n  \"VALIDATED RESPONSE CONTEXT: \" +\n  JSON.stringify(context);\n\n\n// --------------------------------------------------\n// 5. Build Ollama request\n// --------------------------------------------------\n\nreturn [\n  {\n    json: {\n\n      model:\n        \"qwen3:8b\",\n\n      messages: [\n        {\n          role:\n            \"system\",\n\n          content:\n            systemPrompt\n        },\n\n        {\n          role:\n            \"user\",\n\n          content:\n            userPrompt\n        }\n      ],\n\n      stream:\n        false,\n\n      think:\n        false,\n\n      keep_alive:\n        \"5m\",\n\n      format:\n        \"json\"\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "id": "4cf519ef-bc8a-48db-aac6-e25690ffe833",
+      "name": "Response Planner Request Builder"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ollama:11434/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        896,
+        0
+      ],
+      "id": "1edb3e45-645d-4e91-a355-68461ae04840",
+      "name": "Ollama Response Planner"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// Response Plan Validator\n//\n// Deterministically validates an LLM-generated\n// response plan.\n//\n// Security properties:\n// - LLM output is untrusted\n// - investigation verdict cannot be changed\n// - targets must come from authoritative context\n// - only allowlisted actions are accepted\n// - inconclusive / benign cannot propose destructive\n//   response actions\n// - no action is executed here\n// ==================================================\n\n\n// --------------------------------------------------\n// 1. Retrieve authoritative response context\n// --------------------------------------------------\n\nconst context =\n  $(\"Response Context Builder\")\n    .first()\n    .json;\n\n\nif (\n  !context ||\n  typeof context !== \"object\" ||\n  Array.isArray(context)\n) {\n  throw new Error(\n    \"Response Plan Validator could not retrieve Response Context Builder\"\n  );\n}\n\n\nif (\n  context.response_context_version !== \"1.0\"\n) {\n  throw new Error(\n    \"Response Plan Validator requires response_context_version '1.0'\"\n  );\n}\n\n\n// --------------------------------------------------\n// 2. Parse Ollama response\n// --------------------------------------------------\n\nconst ollamaResponse =\n  $json;\n\n\nlet rawPlan;\n\n\ntry {\n\n  rawPlan =\n    ollamaResponse\n      ?.message\n      ?.content;\n\n} catch {\n\n  rawPlan =\n    null;\n}\n\n\nlet plan =\n  null;\n\n\nconst errors =\n  [];\n\n\nif (\n  typeof rawPlan !== \"string\" ||\n  rawPlan.trim() === \"\"\n) {\n\n  errors.push(\n    \"Ollama response does not contain message.content\"\n  );\n\n} else {\n\n  try {\n\n    plan =\n      JSON.parse(rawPlan);\n\n  } catch (error) {\n\n    errors.push(\n      `Response plan is not valid JSON: ${error.message}`\n    );\n  }\n}\n\n\n// --------------------------------------------------\n// 3. Basic plan validation\n// --------------------------------------------------\n\nif (\n  plan !== null\n) {\n\n  if (\n    typeof plan !== \"object\" ||\n    Array.isArray(plan)\n  ) {\n\n    errors.push(\n      \"Response plan must be a JSON object\"\n    );\n\n  } else {\n\n\n    // ----------------------------------------------\n    // Contract version\n    // ----------------------------------------------\n\n    if (\n      plan.response_plan_version !== \"1.0\"\n    ) {\n\n      errors.push(\n        \"response_plan_version must be exactly '1.0'\"\n      );\n    }\n\n\n    // ----------------------------------------------\n    // Alert ID\n    // ----------------------------------------------\n\n    if (\n      plan.alert_id !==\n      context.alert_id\n    ) {\n\n      errors.push(\n        \"alert_id does not match authoritative response context\"\n      );\n    }\n\n\n    // ----------------------------------------------\n    // Investigation verdict\n    // ----------------------------------------------\n\n    if (\n      plan.investigation_verdict !==\n      context.investigation.verdict\n    ) {\n\n      errors.push(\n        \"investigation_verdict does not match authoritative investigation verdict\"\n      );\n    }\n\n\n    // ----------------------------------------------\n    // Investigation confidence\n    // ----------------------------------------------\n\n    if (\n      plan.investigation_confidence !==\n      context.investigation.confidence\n    ) {\n\n      errors.push(\n        \"investigation_confidence does not match authoritative investigation confidence\"\n      );\n    }\n\n\n    // ----------------------------------------------\n    // Recommendation\n    // ----------------------------------------------\n\n    const allowedRecommendations = [\n      \"no_action\",\n      \"response_recommended\"\n    ];\n\n\n    if (\n      !allowedRecommendations.includes(\n        plan.recommendation\n      )\n    ) {\n\n      errors.push(\n        \"recommendation must be one of: no_action, response_recommended\"\n      );\n    }\n\n\n    // ----------------------------------------------\n    // Rationale\n    // ----------------------------------------------\n\n    if (\n      !Array.isArray(\n        plan.rationale\n      )\n    ) {\n\n      errors.push(\n        \"rationale must be an array\"\n      );\n\n    } else {\n\n      plan.rationale.forEach(\n        (item, index) => {\n\n          if (\n            typeof item !== \"string\" ||\n            item.trim() === \"\"\n          ) {\n\n            errors.push(\n              `rationale[${index}] must be a non-empty string`\n            );\n          }\n        }\n      );\n    }\n\n\n    // ----------------------------------------------\n    // proposed_actions\n    // ----------------------------------------------\n\n    if (\n      !Array.isArray(\n        plan.proposed_actions\n      )\n    ) {\n\n      errors.push(\n        \"proposed_actions must be an array\"\n      );\n\n    } else {\n\n\n      // --------------------------------------------\n      // Supported action map\n      // --------------------------------------------\n\n      const supportedActionMap =\n        new Map();\n\n\n      for (\n        const actionDefinition\n        of context.supported_actions\n      ) {\n\n        supportedActionMap.set(\n          actionDefinition.action,\n          actionDefinition\n        );\n      }\n\n\n      // --------------------------------------------\n      // Authoritative response targets\n      // --------------------------------------------\n\n      const targetMap = {\n\n        user:\n          new Set(\n            context.response_targets.users || []\n          ),\n\n        host:\n          new Set(\n            context.response_targets.hosts || []\n          ),\n\n        ip:\n          new Set(\n            context.response_targets.ips || []\n          ),\n\n        domain:\n          new Set(\n            context.response_targets.domains || []\n          ),\n\n        url:\n          new Set(\n            context.response_targets.urls || []\n          ),\n\n        email:\n          new Set(\n            context.response_targets.emails || []\n          )\n      };\n\n\n      // --------------------------------------------\n      // Authoritative evidence sources\n      // --------------------------------------------\n\n      const evidenceSources =\n        new Set();\n\n\n      for (\n        const evidence\n        of context.observed_evidence || []\n      ) {\n\n        if (\n          evidence &&\n          typeof evidence.source === \"string\" &&\n          evidence.source.trim() !== \"\"\n        ) {\n\n          evidenceSources.add(\n            evidence.source\n          );\n        }\n      }\n\n\n      // --------------------------------------------\n      // Validate every proposed action\n      // --------------------------------------------\n\n      plan.proposed_actions.forEach(\n        (action, index) => {\n\n          const prefix =\n            `proposed_actions[${index}]`;\n\n\n          if (\n            !action ||\n            typeof action !== \"object\" ||\n            Array.isArray(action)\n          ) {\n\n            errors.push(\n              `${prefix} must be an object`\n            );\n\n            return;\n          }\n\n\n          // Exact top-level fields\n\n          const allowedFields =\n            new Set([\n              \"action_id\",\n              \"action\",\n              \"target\",\n              \"reason\",\n              \"evidence_sources\",\n              \"priority\"\n            ]);\n\n\n          for (\n            const field\n            of Object.keys(action)\n          ) {\n\n            if (\n              !allowedFields.has(field)\n            ) {\n\n              errors.push(\n                `${prefix} contains unsupported field '${field}'`\n              );\n            }\n          }\n\n\n          // action_id\n\n          const expectedActionId =\n            `action-${index + 1}`;\n\n\n          if (\n            action.action_id !==\n            expectedActionId\n          ) {\n\n            errors.push(\n              `${prefix}.action_id must be '${expectedActionId}'`\n            );\n          }\n\n\n          // action\n\n          if (\n            typeof action.action !== \"string\" ||\n            !supportedActionMap.has(\n              action.action\n            )\n          ) {\n\n            errors.push(\n              `${prefix}.action is not supported`\n            );\n\n            return;\n          }\n\n\n          if (\n            action.action === \"no_action\"\n          ) {\n\n            errors.push(\n              `${prefix}.action must not be 'no_action'`\n            );\n          }\n\n\n          const actionDefinition =\n            supportedActionMap.get(\n              action.action\n            );\n\n\n          // target\n\n          if (\n            !action.target ||\n            typeof action.target !== \"object\" ||\n            Array.isArray(action.target)\n          ) {\n\n            errors.push(\n              `${prefix}.target must be an object`\n            );\n\n          } else {\n\n            const targetFields =\n              Object.keys(\n                action.target\n              );\n\n\n            if (\n              targetFields.length !== 2 ||\n              !targetFields.includes(\"type\") ||\n              !targetFields.includes(\"value\")\n            ) {\n\n              errors.push(\n                `${prefix}.target must contain exactly type and value`\n              );\n            }\n\n\n            const targetType =\n              action.target.type;\n\n\n            const targetValue =\n              action.target.value;\n\n\n            if (\n              typeof targetType !== \"string\"\n            ) {\n\n              errors.push(\n                `${prefix}.target.type must be a string`\n              );\n\n            } else if (\n              !actionDefinition\n                .target_types\n                .includes(targetType)\n            ) {\n\n              errors.push(\n                `${prefix}.target.type '${targetType}' is not supported by action '${action.action}'`\n              );\n            }\n\n\n            if (\n              typeof targetValue !== \"string\" ||\n              targetValue.trim() === \"\"\n            ) {\n\n              errors.push(\n                `${prefix}.target.value must be a non-empty string`\n              );\n\n            } else if (\n              !targetMap[targetType] ||\n              !targetMap[targetType].has(\n                targetValue\n              )\n            ) {\n\n              errors.push(\n                `${prefix}.target.value '${targetValue}' is not an authoritative response target`\n              );\n            }\n          }\n\n\n          // reason\n\n          if (\n            typeof action.reason !== \"string\" ||\n            action.reason.trim() === \"\"\n          ) {\n\n            errors.push(\n              `${prefix}.reason must be a non-empty string`\n            );\n          }\n\n\n          // evidence_sources\n\n          if (\n            !Array.isArray(\n              action.evidence_sources\n            ) ||\n            action.evidence_sources.length === 0\n          ) {\n\n            errors.push(\n              `${prefix}.evidence_sources must be a non-empty array`\n            );\n\n          } else {\n\n            action.evidence_sources.forEach(\n              (source, sourceIndex) => {\n\n                if (\n                  typeof source !== \"string\" ||\n                  !evidenceSources.has(source)\n                ) {\n\n                  errors.push(\n                    `${prefix}.evidence_sources[${sourceIndex}] '${source}' is not an authoritative evidence source`\n                  );\n                }\n              }\n            );\n          }\n\n\n          // priority\n\n          const allowedPriorities = [\n            \"high\",\n            \"medium\",\n            \"low\"\n          ];\n\n\n          if (\n            !allowedPriorities.includes(\n              action.priority\n            )\n          ) {\n\n            errors.push(\n              `${prefix}.priority must be one of: high, medium, low`\n            );\n          }\n        }\n      );\n\n\n      // --------------------------------------------\n      // Recommendation consistency\n      // --------------------------------------------\n\n      if (\n        plan.proposed_actions.length === 0 &&\n        plan.recommendation !== \"no_action\"\n      ) {\n\n        errors.push(\n          \"recommendation must be 'no_action' when proposed_actions is empty\"\n        );\n      }\n\n\n      if (\n        plan.proposed_actions.length > 0 &&\n        plan.recommendation !== \"response_recommended\"\n      ) {\n\n        errors.push(\n          \"recommendation must be 'response_recommended' when proposed_actions contains actions\"\n        );\n      }\n\n\n      // --------------------------------------------\n      // Deterministic verdict security policy\n      // --------------------------------------------\n\n      const verdict =\n        context.investigation.verdict;\n\n\n      if (\n        verdict === \"inconclusive\" ||\n        verdict === \"benign\"\n      ) {\n\n        if (\n          plan.proposed_actions.length > 0\n        ) {\n\n          errors.push(\n            `investigation verdict '${verdict}' cannot propose destructive response actions`\n          );\n        }\n\n\n        if (\n          plan.recommendation !== \"no_action\"\n        ) {\n\n          errors.push(\n            `investigation verdict '${verdict}' requires recommendation 'no_action'`\n          );\n        }\n      }\n    }\n  }\n}\n\n\n// --------------------------------------------------\n// 4. Build validation envelope\n// --------------------------------------------------\n\nconst valid =\n  errors.length === 0;\n\n\nreturn [\n  {\n    json: {\n\n      response_plan_validation_version:\n        \"1.0\",\n\n      valid,\n\n      errors,\n\n      plan:\n        valid\n          ? plan\n          : null,\n\n      raw_plan:\n        plan,\n\n      authoritative_context: {\n\n        alert_id:\n          context.alert_id,\n\n        investigation_verdict:\n          context.investigation.verdict,\n\n        investigation_confidence:\n          context.investigation.confidence,\n\n        response_targets:\n          context.response_targets\n      }\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1376,
+        0
+      ],
+      "id": "ebc3233e-6ab0-4963-a0a4-5a3e27c70421",
+      "name": "Response Plan Validator"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// Response Policy Evaluator\n//\n// Applies deterministic response policy to a\n// validated response plan.\n//\n// IMPORTANT:\n// - This node does NOT execute actions.\n// - This node does NOT grant human approval.\n// - LLM recommendations never override policy.\n// - Destructive response actions are currently\n//   approval-required by default.\n// ==================================================\n\nconst validation = $json;\n\n\n// --------------------------------------------------\n// 1. Validate validation envelope\n// --------------------------------------------------\n\nif (\n  !validation ||\n  typeof validation !== \"object\" ||\n  Array.isArray(validation)\n) {\n  throw new Error(\n    \"Response Policy Evaluator requires a response-plan validation envelope\"\n  );\n}\n\n\nif (\n  validation.response_plan_validation_version !== \"1.0\"\n) {\n  throw new Error(\n    \"Response Policy Evaluator requires response_plan_validation_version '1.0'\"\n  );\n}\n\n\n// --------------------------------------------------\n// 2. Retrieve authoritative response context\n// --------------------------------------------------\n\nconst context =\n  $(\"Response Context Builder\")\n    .first()\n    .json;\n\n\nif (\n  !context ||\n  typeof context !== \"object\" ||\n  Array.isArray(context)\n) {\n  throw new Error(\n    \"Response Policy Evaluator could not retrieve Response Context Builder\"\n  );\n}\n\n\nif (\n  context.response_context_version !== \"1.0\"\n) {\n  throw new Error(\n    \"Response Policy Evaluator requires response_context_version '1.0'\"\n  );\n}\n\n\n// --------------------------------------------------\n// 3. Reject invalid LLM plans\n// --------------------------------------------------\n\nif (\n  validation.valid !== true\n) {\n  return [\n    {\n      json: {\n\n        response_policy_evaluation_version:\n          \"1.0\",\n\n        alert_id:\n          context.alert_id,\n\n        decision:\n          \"reject\",\n\n        reason:\n          \"invalid_response_plan\",\n\n        investigation_verdict:\n          context.investigation.verdict,\n\n        investigation_confidence:\n          context.investigation.confidence,\n\n        action_decisions:\n          [],\n\n        validation_errors:\n          Array.isArray(validation.errors)\n            ? validation.errors\n            : [],\n\n        execution_allowed:\n          false,\n\n        human_approval_required:\n          false\n      }\n    }\n  ];\n}\n\n\n// --------------------------------------------------\n// 4. Validate canonical plan\n// --------------------------------------------------\n\nconst plan =\n  validation.plan;\n\n\nif (\n  !plan ||\n  typeof plan !== \"object\" ||\n  Array.isArray(plan)\n) {\n  throw new Error(\n    \"Response Policy Evaluator requires validation.plan when valid=true\"\n  );\n}\n\n\nif (\n  plan.alert_id !== context.alert_id\n) {\n  throw new Error(\n    \"Response Policy Evaluator detected alert_id mismatch\"\n  );\n}\n\n\nif (\n  plan.investigation_verdict !==\n  context.investigation.verdict\n) {\n  throw new Error(\n    \"Response Policy Evaluator detected verdict mismatch\"\n  );\n}\n\n\nif (\n  plan.investigation_confidence !==\n  context.investigation.confidence\n) {\n  throw new Error(\n    \"Response Policy Evaluator detected confidence mismatch\"\n  );\n}\n\n\nif (\n  !Array.isArray(plan.proposed_actions)\n) {\n  throw new Error(\n    \"Response Policy Evaluator requires proposed_actions\"\n  );\n}\n\n\n// --------------------------------------------------\n// 5. Deterministic response policy\n// --------------------------------------------------\n//\n// Phase 9 conservative policy:\n//\n// benign:\n//   destructive actions forbidden\n//\n// inconclusive:\n//   destructive actions forbidden\n//\n// suspicious:\n//   destructive actions may only proceed to\n//   human approval\n//\n// malicious:\n//   destructive actions may only proceed to\n//   human approval\n//\n// automatic execution is intentionally disabled\n// during this phase.\n// --------------------------------------------------\n\nconst policy = {\n\n  policy_version:\n    \"1.0\",\n\n  automatic_execution_enabled:\n    false,\n\n  verdicts: {\n\n    benign: {\n      destructive_response:\n        \"forbidden\"\n    },\n\n    inconclusive: {\n      destructive_response:\n        \"forbidden\"\n    },\n\n    suspicious: {\n      destructive_response:\n        \"approval_required\"\n    },\n\n    malicious: {\n      destructive_response:\n        \"approval_required\"\n    }\n  },\n\n  actions: {\n\n    revoke_sessions: {\n      destructive:\n        true,\n\n      required_target_type:\n        \"user\",\n\n      mode:\n        \"approval_required\"\n    },\n\n    disable_user: {\n      destructive:\n        true,\n\n      required_target_type:\n        \"user\",\n\n      mode:\n        \"approval_required\"\n    },\n\n    isolate_endpoint: {\n      destructive:\n        true,\n\n      required_target_type:\n        \"host\",\n\n      mode:\n        \"approval_required\"\n    },\n\n    block_ip: {\n      destructive:\n        true,\n\n      required_target_type:\n        \"ip\",\n\n      mode:\n        \"approval_required\"\n    },\n\n    block_domain: {\n      destructive:\n        true,\n\n      required_target_type:\n        \"domain\",\n\n      mode:\n        \"approval_required\"\n    },\n\n    delete_email: {\n      destructive:\n        true,\n\n      required_target_type:\n        \"email\",\n\n      mode:\n        \"approval_required\"\n    }\n  }\n};\n\n\n// --------------------------------------------------\n// 6. Handle explicit no-action plan\n// --------------------------------------------------\n\nif (\n  plan.recommendation === \"no_action\"\n) {\n\n  if (\n    plan.proposed_actions.length !== 0\n  ) {\n    throw new Error(\n      \"no_action plan unexpectedly contains proposed_actions\"\n    );\n  }\n\n\n  return [\n    {\n      json: {\n\n        response_policy_evaluation_version:\n          \"1.0\",\n\n        policy_version:\n          policy.policy_version,\n\n        alert_id:\n          context.alert_id,\n\n        decision:\n          \"no_action\",\n\n        reason:\n          \"validated_plan_recommends_no_action\",\n\n        investigation_verdict:\n          context.investigation.verdict,\n\n        investigation_confidence:\n          context.investigation.confidence,\n\n        action_decisions:\n          [],\n\n        execution_allowed:\n          false,\n\n        human_approval_required:\n          false\n      }\n    }\n  ];\n}\n\n\n// --------------------------------------------------\n// 7. Evaluate proposed actions\n// --------------------------------------------------\n\nconst verdict =\n  context.investigation.verdict;\n\n\nconst verdictPolicy =\n  policy.verdicts[verdict];\n\n\nif (!verdictPolicy) {\n  throw new Error(\n    `No response policy exists for verdict '${verdict}'`\n  );\n}\n\n\nconst actionDecisions =\n  [];\n\n\nlet hasRejectedActions =\n  false;\n\nlet hasApprovalRequiredActions =\n  false;\n\nlet hasAutomaticActions =\n  false;\n\n\nfor (\n  const action\n  of plan.proposed_actions\n) {\n\n  const actionPolicy =\n    policy.actions[action.action];\n\n\n  if (!actionPolicy) {\n\n    hasRejectedActions =\n      true;\n\n\n    actionDecisions.push({\n\n      action_id:\n        action.action_id,\n\n      action:\n        action.action,\n\n      target:\n        action.target,\n\n      decision:\n        \"reject\",\n\n      reason:\n        \"action_not_defined_in_response_policy\"\n    });\n\n\n    continue;\n  }\n\n\n  // ----------------------------------------------\n  // Target-type policy validation\n  // ----------------------------------------------\n\n  if (\n    action.target?.type !==\n    actionPolicy.required_target_type\n  ) {\n\n    hasRejectedActions =\n      true;\n\n\n    actionDecisions.push({\n\n      action_id:\n        action.action_id,\n\n      action:\n        action.action,\n\n      target:\n        action.target,\n\n      decision:\n        \"reject\",\n\n      reason:\n        \"target_type_not_allowed_by_policy\"\n    });\n\n\n    continue;\n  }\n\n\n  // ----------------------------------------------\n  // Verdict policy\n  // ----------------------------------------------\n\n  if (\n    verdictPolicy.destructive_response ===\n    \"forbidden\"\n  ) {\n\n    hasRejectedActions =\n      true;\n\n\n    actionDecisions.push({\n\n      action_id:\n        action.action_id,\n\n      action:\n        action.action,\n\n      target:\n        action.target,\n\n      decision:\n        \"reject\",\n\n      reason:\n        `destructive_response_forbidden_for_${verdict}_verdict`\n    });\n\n\n    continue;\n  }\n\n\n  // ----------------------------------------------\n  // Human approval policy\n  // ----------------------------------------------\n\n  if (\n    verdictPolicy.destructive_response ===\n      \"approval_required\" ||\n    actionPolicy.mode ===\n      \"approval_required\"\n  ) {\n\n    hasApprovalRequiredActions =\n      true;\n\n\n    actionDecisions.push({\n\n      action_id:\n        action.action_id,\n\n      action:\n        action.action,\n\n      target:\n        action.target,\n\n      priority:\n        action.priority,\n\n      reason:\n        action.reason,\n\n      evidence_sources:\n        action.evidence_sources,\n\n      decision:\n        \"approval_required\",\n\n      policy_reason:\n        \"destructive_response_requires_human_approval\"\n    });\n\n\n    continue;\n  }\n\n\n  // ----------------------------------------------\n  // Automatic execution\n  //\n  // Disabled in Phase 9.\n  // ----------------------------------------------\n\n  if (\n    actionPolicy.mode === \"automatic\" &&\n    policy.automatic_execution_enabled === true\n  ) {\n\n    hasAutomaticActions =\n      true;\n\n\n    actionDecisions.push({\n\n      action_id:\n        action.action_id,\n\n      action:\n        action.action,\n\n      target:\n        action.target,\n\n      priority:\n        action.priority,\n\n      reason:\n        action.reason,\n\n      evidence_sources:\n        action.evidence_sources,\n\n      decision:\n        \"automatic_allowed\",\n\n      policy_reason:\n        \"automatic_execution_allowed_by_policy\"\n    });\n\n\n    continue;\n  }\n\n\n  // ----------------------------------------------\n  // Fail closed\n  // ----------------------------------------------\n\n  hasRejectedActions =\n    true;\n\n\n  actionDecisions.push({\n\n    action_id:\n      action.action_id,\n\n    action:\n      action.action,\n\n    target:\n      action.target,\n\n    decision:\n      \"reject\",\n\n    reason:\n      \"no_authorizing_response_policy\"\n  });\n}\n\n\n// --------------------------------------------------\n// 8. Determine global decision\n// --------------------------------------------------\n\nlet decision;\nlet reason;\n\n\nif (\n  hasRejectedActions\n) {\n\n  decision =\n    \"reject\";\n\n  reason =\n    \"one_or_more_actions_rejected_by_policy\";\n\n} else if (\n  hasApprovalRequiredActions\n) {\n\n  decision =\n    \"approval_required\";\n\n  reason =\n    \"human_approval_required\";\n\n} else if (\n  hasAutomaticActions\n) {\n\n  decision =\n    \"automatic_allowed\";\n\n  reason =\n    \"automatic_execution_allowed_by_policy\";\n\n} else {\n\n  decision =\n    \"no_action\";\n\n  reason =\n    \"no_executable_response_actions\";\n}\n\n\n// --------------------------------------------------\n// 9. Return policy evaluation\n// --------------------------------------------------\n\nreturn [\n  {\n    json: {\n\n      response_policy_evaluation_version:\n        \"1.0\",\n\n      policy_version:\n        policy.policy_version,\n\n      alert_id:\n        context.alert_id,\n\n      decision,\n\n      reason,\n\n      investigation_verdict:\n        context.investigation.verdict,\n\n      investigation_confidence:\n        context.investigation.confidence,\n\n      action_decisions:\n        actionDecisions,\n\n      execution_allowed:\n        decision === \"automatic_allowed\",\n\n      human_approval_required:\n        decision === \"approval_required\"\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        0
+      ],
+      "id": "3e757555-39f5-471b-975a-695c5f5d2591",
+      "name": "Response Policy Evaluator"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// Response Plan Approval Test\n//\n// TEMPORARY POLICY TEST.\n//\n// Forces a structurally valid response plan for a\n// malicious investigation result.\n//\n// Expected behavior:\n// - Response Plan Validator => valid = true\n// - Response Policy Evaluator => approval_required\n//\n// No action is executed.\n// ==================================================\n\nreturn [\n  {\n    json: {\n      model: \"qwen3:8b\",\n\n      created_at:\n        new Date().toISOString(),\n\n      message: {\n        role:\n          \"assistant\",\n\n        content:\n          JSON.stringify(\n            {\n              response_plan_version:\n                \"1.0\",\n\n              alert_id:\n                \"ALERT-0001\",\n\n              investigation_verdict:\n                \"malicious\",\n\n              investigation_confidence:\n                0.95,\n\n              recommendation:\n                \"response_recommended\",\n\n              rationale: [\n                \"Validated malicious unauthorized account activity justifies proposing session revocation for policy evaluation.\"\n              ],\n\n              proposed_actions: [\n                {\n                  action_id:\n                    \"action-1\",\n\n                  action:\n                    \"revoke_sessions\",\n\n                  target: {\n                    type:\n                      \"user\",\n\n                    value:\n                      \"john.doe@example.com\"\n                  },\n\n                  reason:\n                    \"The validated investigation result establishes malicious unauthorized account activity affecting this user.\",\n\n                  evidence_sources: [\n                    \"get_signins\"\n                  ],\n\n                  priority:\n                    \"high\"\n                }\n              ]\n            }\n          )\n      },\n\n      done:\n        true,\n\n      done_reason:\n        \"stop\"\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        0
+      ],
+      "id": "02c7f3c2-769d-4018-9dda-a542b4954955",
+      "name": "Response Plan Approval Test"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "3366ebf8-0354-4cd4-8f99-9846565558ef",
+              "leftValue": "={{ $json.decision === \"approval_required\" && $json.human_approval_required === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1824,
+        0
+      ],
+      "id": "199ab83d-a80d-4ff1-b8dd-a04b6a984edb",
+      "name": "Requires Human Approval?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// Approval Request Builder\n//\n// Builds a canonical human-approval request from a\n// deterministic response-policy evaluation.\n//\n// IMPORTANT:\n// - This node does NOT approve anything.\n// - This node does NOT execute anything.\n// - Only actions explicitly marked approval_required\n//   by Response Policy Evaluator are included.\n// ==================================================\n\nconst evaluation = $json;\n\n\n// --------------------------------------------------\n// 1. Validate policy evaluation\n// --------------------------------------------------\n\nif (\n  !evaluation ||\n  typeof evaluation !== \"object\" ||\n  Array.isArray(evaluation)\n) {\n  throw new Error(\n    \"Approval Request Builder requires a response policy evaluation\"\n  );\n}\n\n\nif (\n  evaluation.response_policy_evaluation_version !== \"1.0\"\n) {\n  throw new Error(\n    \"Approval Request Builder requires response_policy_evaluation_version '1.0'\"\n  );\n}\n\n\nif (\n  evaluation.decision !== \"approval_required\"\n) {\n  throw new Error(\n    \"Approval Request Builder requires decision 'approval_required'\"\n  );\n}\n\n\nif (\n  evaluation.human_approval_required !== true\n) {\n  throw new Error(\n    \"Approval Request Builder requires human_approval_required=true\"\n  );\n}\n\n\nif (\n  evaluation.execution_allowed !== false\n) {\n  throw new Error(\n    \"Approval Request Builder requires execution_allowed=false before human approval\"\n  );\n}\n\n\nif (\n  typeof evaluation.alert_id !== \"string\" ||\n  evaluation.alert_id.trim() === \"\"\n) {\n  throw new Error(\n    \"Approval Request Builder requires alert_id\"\n  );\n}\n\n\nif (\n  !Array.isArray(evaluation.action_decisions) ||\n  evaluation.action_decisions.length === 0\n) {\n  throw new Error(\n    \"Approval Request Builder requires at least one action_decision\"\n  );\n}\n\n\n// --------------------------------------------------\n// 2. Select only approval-required actions\n// --------------------------------------------------\n\nconst actions =\n  evaluation.action_decisions.filter(\n    action =>\n      action &&\n      typeof action === \"object\" &&\n      !Array.isArray(action) &&\n      action.decision === \"approval_required\"\n  );\n\n\nif (\n  actions.length === 0\n) {\n  throw new Error(\n    \"Approval Request Builder found no approval-required actions\"\n  );\n}\n\n\n// --------------------------------------------------\n// 3. Validate actions\n// --------------------------------------------------\n\nconst canonicalActions =\n  actions.map(\n    (action, index) => {\n\n      if (\n        typeof action.action_id !== \"string\" ||\n        action.action_id.trim() === \"\"\n      ) {\n        throw new Error(\n          `action_decisions[${index}].action_id is required`\n        );\n      }\n\n\n      if (\n        typeof action.action !== \"string\" ||\n        action.action.trim() === \"\"\n      ) {\n        throw new Error(\n          `action_decisions[${index}].action is required`\n        );\n      }\n\n\n      if (\n        !action.target ||\n        typeof action.target !== \"object\" ||\n        Array.isArray(action.target)\n      ) {\n        throw new Error(\n          `action_decisions[${index}].target is required`\n        );\n      }\n\n\n      if (\n        typeof action.target.type !== \"string\" ||\n        action.target.type.trim() === \"\"\n      ) {\n        throw new Error(\n          `action_decisions[${index}].target.type is required`\n        );\n      }\n\n\n      if (\n        typeof action.target.value !== \"string\" ||\n        action.target.value.trim() === \"\"\n      ) {\n        throw new Error(\n          `action_decisions[${index}].target.value is required`\n        );\n      }\n\n\n      if (\n        typeof action.reason !== \"string\" ||\n        action.reason.trim() === \"\"\n      ) {\n        throw new Error(\n          `action_decisions[${index}].reason is required`\n        );\n      }\n\n\n      if (\n        !Array.isArray(action.evidence_sources) ||\n        action.evidence_sources.length === 0\n      ) {\n        throw new Error(\n          `action_decisions[${index}].evidence_sources is required`\n        );\n      }\n\n\n      return {\n\n        action_id:\n          action.action_id,\n\n        action:\n          action.action,\n\n        target: {\n\n          type:\n            action.target.type,\n\n          value:\n            action.target.value\n        },\n\n        priority:\n          action.priority || \"medium\",\n\n        reason:\n          action.reason,\n\n        evidence_sources:\n          action.evidence_sources,\n\n        policy_decision:\n          \"approval_required\",\n\n        policy_reason:\n          action.policy_reason ||\n          \"destructive_response_requires_human_approval\"\n      };\n    }\n  );\n\n\n// --------------------------------------------------\n// 4. Build immutable approval scope\n// --------------------------------------------------\n//\n// Approval must apply to these exact actions.\n//\n// A later approval response is not allowed to:\n// - change the action,\n// - change the target,\n// - add actions,\n// - approve another alert.\n// --------------------------------------------------\n\nconst approvalRequest = {\n\n  approval_request_version:\n    \"1.0\",\n\n  approval_request_id:\n    `approval-${evaluation.alert_id}-${Date.now()}`,\n\n  alert_id:\n    evaluation.alert_id,\n\n  status:\n    \"pending\",\n\n  created_at:\n    new Date().toISOString(),\n\n  investigation_context: {\n\n    verdict:\n      evaluation.investigation_verdict,\n\n    confidence:\n      evaluation.investigation_confidence\n  },\n\n  policy_context: {\n\n    policy_version:\n      evaluation.policy_version,\n\n    decision:\n      evaluation.decision,\n\n    execution_allowed_before_approval:\n      false\n  },\n\n  actions:\n    canonicalActions,\n\n  approval_scope: {\n\n    action_count:\n      canonicalActions.length,\n\n    action_ids:\n      canonicalActions.map(\n        action => action.action_id\n      ),\n\n    modification_allowed:\n      false\n  },\n\n  allowed_decisions: [\n    \"approve\",\n    \"reject\"\n  ]\n};\n\n\n// --------------------------------------------------\n// 5. Return approval request\n// --------------------------------------------------\n\nreturn [\n  {\n    json:\n      approvalRequest\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2048,
+        -96
+      ],
+      "id": "c218578c-f55a-4729-84d1-a1885318b41e",
+      "name": "Approval Request Builder"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// Human Approval Test Input\n//\n// TEMPORARY VALID HUMAN APPROVAL FIXTURE.\n//\n// Simulates a valid human approval decision for the\n// exact approval request produced by\n// Approval Request Builder.\n//\n// IMPORTANT:\n// - This is a test fixture only.\n// - It does NOT execute any response action.\n// - It must later be replaced by a real approval\n//   mechanism.\n// ==================================================\n\nconst request =\n  $(\"Approval Request Builder\")\n    .first()\n    .json;\n\n\nif (\n  !request ||\n  typeof request !== \"object\" ||\n  Array.isArray(request)\n) {\n  throw new Error(\n    \"Human Approval Test Input could not retrieve Approval Request Builder\"\n  );\n}\n\n\nif (\n  request.approval_request_version !== \"1.0\"\n) {\n  throw new Error(\n    \"Human Approval Test Input requires approval_request_version '1.0'\"\n  );\n}\n\n\nif (\n  request.status !== \"pending\"\n) {\n  throw new Error(\n    \"Human Approval Test Input requires approval request status 'pending'\"\n  );\n}\n\n\nif (\n  !request.approval_scope ||\n  typeof request.approval_scope !== \"object\" ||\n  Array.isArray(request.approval_scope)\n) {\n  throw new Error(\n    \"Human Approval Test Input requires approval_scope\"\n  );\n}\n\n\nif (\n  !Array.isArray(\n    request.approval_scope.action_ids\n  ) ||\n  request.approval_scope.action_ids.length === 0\n) {\n  throw new Error(\n    \"Human Approval Test Input requires at least one action_id\"\n  );\n}\n\n\n// --------------------------------------------------\n// Return valid manual approval\n// --------------------------------------------------\n\nreturn [\n  {\n    json: {\n\n      approval_decision_version:\n        \"1.0\",\n\n      approval_request_id:\n        request.approval_request_id,\n\n      alert_id:\n        request.alert_id,\n\n      decision:\n        \"approve\",\n\n      approved_action_ids:\n        [...request.approval_scope.action_ids],\n\n      approver: {\n\n        type:\n          \"human\",\n\n        identifier:\n          \"manual-test-approver\"\n      },\n\n      decided_at:\n        new Date().toISOString(),\n\n      comment:\n        \"Manual approval test for Phase 9.\"\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2272,
+        -96
+      ],
+      "id": "bb7501dd-5983-46c1-940b-a4be02b91052",
+      "name": "Human Approval Test Input"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// Approval Decision Validator\n//\n// Deterministically validates a human approval\n// decision against the immutable approval request.\n//\n// Security properties:\n// - approval_request_id must match exactly\n// - alert_id must match exactly\n// - decision must be approve or reject\n// - approved actions cannot be added or modified\n// - approval scope must match exactly\n// - no execution occurs here\n// ==================================================\n\nconst decisionInput =\n  $json;\n\n\nconst request =\n  $(\"Approval Request Builder\")\n    .first()\n    .json;\n\n\n// --------------------------------------------------\n// 1. Validate authoritative approval request\n// --------------------------------------------------\n\nif (\n  !request ||\n  typeof request !== \"object\" ||\n  Array.isArray(request)\n) {\n  throw new Error(\n    \"Approval Decision Validator could not retrieve Approval Request Builder\"\n  );\n}\n\n\nif (\n  request.approval_request_version !== \"1.0\"\n) {\n  throw new Error(\n    \"Approval Decision Validator requires approval_request_version '1.0'\"\n  );\n}\n\n\nif (\n  request.status !== \"pending\"\n) {\n  throw new Error(\n    \"Approval Decision Validator requires approval request status 'pending'\"\n  );\n}\n\n\nif (\n  !request.approval_scope ||\n  typeof request.approval_scope !== \"object\" ||\n  Array.isArray(request.approval_scope)\n) {\n  throw new Error(\n    \"Approval Decision Validator requires approval_scope\"\n  );\n}\n\n\nif (\n  !Array.isArray(\n    request.approval_scope.action_ids\n  )\n) {\n  throw new Error(\n    \"Approval Decision Validator requires approval_scope.action_ids\"\n  );\n}\n\n\n// --------------------------------------------------\n// 2. Validate decision input\n// --------------------------------------------------\n\nconst errors = [];\n\n\nif (\n  !decisionInput ||\n  typeof decisionInput !== \"object\" ||\n  Array.isArray(decisionInput)\n) {\n  errors.push(\n    \"approval decision must be an object\"\n  );\n}\n\n\nif (\n  decisionInput?.approval_decision_version !== \"1.0\"\n) {\n  errors.push(\n    \"approval_decision_version must be exactly '1.0'\"\n  );\n}\n\n\nif (\n  decisionInput?.approval_request_id !==\n  request.approval_request_id\n) {\n  errors.push(\n    \"approval_request_id does not match the authoritative approval request\"\n  );\n}\n\n\nif (\n  decisionInput?.alert_id !==\n  request.alert_id\n) {\n  errors.push(\n    \"alert_id does not match the authoritative approval request\"\n  );\n}\n\n\nconst allowedDecisions = [\n  \"approve\",\n  \"reject\"\n];\n\n\nif (\n  !allowedDecisions.includes(\n    decisionInput?.decision\n  )\n) {\n  errors.push(\n    \"decision must be one of: approve, reject\"\n  );\n}\n\n\n// --------------------------------------------------\n// 3. Validate approver metadata\n// --------------------------------------------------\n\nif (\n  !decisionInput?.approver ||\n  typeof decisionInput.approver !== \"object\" ||\n  Array.isArray(decisionInput.approver)\n) {\n  errors.push(\n    \"approver must be an object\"\n  );\n\n} else {\n\n  if (\n    decisionInput.approver.type !== \"human\"\n  ) {\n    errors.push(\n      \"approver.type must be 'human'\"\n    );\n  }\n\n\n  if (\n    typeof decisionInput.approver.identifier !== \"string\" ||\n    decisionInput.approver.identifier.trim() === \"\"\n  ) {\n    errors.push(\n      \"approver.identifier must be a non-empty string\"\n    );\n  }\n}\n\n\n// --------------------------------------------------\n// 4. Validate decided_at\n// --------------------------------------------------\n\nif (\n  typeof decisionInput?.decided_at !== \"string\" ||\n  Number.isNaN(\n    Date.parse(\n      decisionInput?.decided_at\n    )\n  )\n) {\n  errors.push(\n    \"decided_at must be a valid ISO timestamp\"\n  );\n}\n\n\n// --------------------------------------------------\n// 5. Validate approved action scope\n// --------------------------------------------------\n\nconst requestedActionIds =\n  [...request.approval_scope.action_ids];\n\n\nconst approvedActionIds =\n  Array.isArray(\n    decisionInput?.approved_action_ids\n  )\n    ? [...decisionInput.approved_action_ids]\n    : null;\n\n\nif (\n  decisionInput?.decision === \"approve\"\n) {\n\n  if (\n    approvedActionIds === null\n  ) {\n    errors.push(\n      \"approved_action_ids must be an array when decision='approve'\"\n    );\n\n  } else {\n\n    const requestedSet =\n      new Set(\n        requestedActionIds\n      );\n\n\n    const approvedSet =\n      new Set(\n        approvedActionIds\n      );\n\n\n    if (\n      approvedSet.size !==\n      approvedActionIds.length\n    ) {\n      errors.push(\n        \"approved_action_ids contains duplicate action IDs\"\n      );\n    }\n\n\n    if (\n      approvedSet.size !==\n      requestedSet.size\n    ) {\n      errors.push(\n        \"approved_action_ids must exactly match the requested approval scope\"\n      );\n\n    } else {\n\n      for (\n        const actionId\n        of requestedSet\n      ) {\n\n        if (\n          !approvedSet.has(\n            actionId\n          )\n        ) {\n          errors.push(\n            \"approved_action_ids must exactly match the requested approval scope\"\n          );\n\n          break;\n        }\n      }\n    }\n  }\n}\n\n\n// --------------------------------------------------\n// 6. Reject decision must approve no actions\n// --------------------------------------------------\n\nif (\n  decisionInput?.decision === \"reject\"\n) {\n\n  if (\n    approvedActionIds !== null &&\n    approvedActionIds.length > 0\n  ) {\n    errors.push(\n      \"approved_action_ids must be empty when decision='reject'\"\n    );\n  }\n}\n\n\n// --------------------------------------------------\n// 7. Build canonical approved action set\n// --------------------------------------------------\n\nconst valid =\n  errors.length === 0;\n\n\nlet authorizedActions =\n  [];\n\n\nif (\n  valid &&\n  decisionInput.decision === \"approve\"\n) {\n\n  authorizedActions =\n    request.actions.map(\n      action => ({\n\n        action_id:\n          action.action_id,\n\n        action:\n          action.action,\n\n        target:\n          action.target,\n\n        priority:\n          action.priority,\n\n        reason:\n          action.reason,\n\n        evidence_sources:\n          action.evidence_sources,\n\n        approval_request_id:\n          request.approval_request_id,\n\n        approved_by:\n          decisionInput.approver.identifier,\n\n        approved_at:\n          decisionInput.decided_at\n      })\n    );\n}\n\n\n// --------------------------------------------------\n// 8. Return validation envelope\n// --------------------------------------------------\n\nreturn [\n  {\n    json: {\n\n      approval_validation_version:\n        \"1.0\",\n\n      valid,\n\n      errors,\n\n      approval_request_id:\n        request.approval_request_id,\n\n      alert_id:\n        request.alert_id,\n\n      decision:\n        valid\n          ? decisionInput.decision\n          : null,\n\n      approved:\n        valid &&\n        decisionInput.decision === \"approve\",\n\n      rejected:\n        valid &&\n        decisionInput.decision === \"reject\",\n\n      authorized_actions:\n        authorizedActions,\n\n      execution_allowed:\n        valid &&\n        decisionInput.decision === \"approve\" &&\n        authorizedActions.length > 0,\n\n      approver:\n        valid\n          ? decisionInput.approver\n          : null\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2496,
+        -96
+      ],
+      "id": "91d5b098-814d-4e08-9d1c-8901dcbb7e16",
+      "name": "Approval Decision Validator"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "6bf097fb-91ce-4b71-b687-a4bb883c58ff",
+              "leftValue": "={{    $json.valid === true &&   $json.approved === true &&   $json.execution_allowed === true &&   Array.isArray($json.authorized_actions) &&   $json.authorized_actions.length > 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2720,
+        -96
+      ],
+      "id": "d0ad9770-14d8-4dae-920e-270a6316b9c9",
+      "name": "Execution Authorization Gate"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// Authorized Response Actions\n//\n// Produces the canonical execution-ready authorization\n// envelope.\n//\n// IMPORTANT:\n// - This node still does NOT execute anything.\n// - It represents the security boundary immediately\n//   before a future Response Executor.\n// ==================================================\n\nconst approval =\n  $json;\n\n\n// --------------------------------------------------\n// 1. Validate approval envelope\n// --------------------------------------------------\n\nif (\n  !approval ||\n  typeof approval !== \"object\" ||\n  Array.isArray(approval)\n) {\n  throw new Error(\n    \"Authorized Response Actions requires an approval validation envelope\"\n  );\n}\n\n\nif (\n  approval.approval_validation_version !== \"1.0\"\n) {\n  throw new Error(\n    \"Authorized Response Actions requires approval_validation_version '1.0'\"\n  );\n}\n\n\nif (\n  approval.valid !== true\n) {\n  throw new Error(\n    \"Authorized Response Actions requires valid=true\"\n  );\n}\n\n\nif (\n  approval.approved !== true\n) {\n  throw new Error(\n    \"Authorized Response Actions requires approved=true\"\n  );\n}\n\n\nif (\n  approval.execution_allowed !== true\n) {\n  throw new Error(\n    \"Authorized Response Actions requires execution_allowed=true\"\n  );\n}\n\n\nif (\n  typeof approval.approval_request_id !== \"string\" ||\n  approval.approval_request_id.trim() === \"\"\n) {\n  throw new Error(\n    \"Authorized Response Actions requires approval_request_id\"\n  );\n}\n\n\nif (\n  typeof approval.alert_id !== \"string\" ||\n  approval.alert_id.trim() === \"\"\n) {\n  throw new Error(\n    \"Authorized Response Actions requires alert_id\"\n  );\n}\n\n\nif (\n  !Array.isArray(approval.authorized_actions) ||\n  approval.authorized_actions.length === 0\n) {\n  throw new Error(\n    \"Authorized Response Actions requires at least one authorized action\"\n  );\n}\n\n\n// --------------------------------------------------\n// 2. Validate authorized actions\n// --------------------------------------------------\n\nconst supportedActions =\n  new Set([\n    \"revoke_sessions\",\n    \"disable_user\",\n    \"isolate_endpoint\",\n    \"block_ip\",\n    \"block_domain\",\n    \"delete_email\"\n  ]);\n\n\nconst canonicalActions =\n  approval.authorized_actions.map(\n    (action, index) => {\n\n      if (\n        !action ||\n        typeof action !== \"object\" ||\n        Array.isArray(action)\n      ) {\n        throw new Error(\n          `authorized_actions[${index}] must be an object`\n        );\n      }\n\n\n      if (\n        typeof action.action_id !== \"string\" ||\n        action.action_id.trim() === \"\"\n      ) {\n        throw new Error(\n          `authorized_actions[${index}].action_id is required`\n        );\n      }\n\n\n      if (\n        typeof action.action !== \"string\" ||\n        !supportedActions.has(action.action)\n      ) {\n        throw new Error(\n          `authorized_actions[${index}].action is unsupported`\n        );\n      }\n\n\n      if (\n        !action.target ||\n        typeof action.target !== \"object\" ||\n        Array.isArray(action.target)\n      ) {\n        throw new Error(\n          `authorized_actions[${index}].target is required`\n        );\n      }\n\n\n      if (\n        typeof action.target.type !== \"string\" ||\n        action.target.type.trim() === \"\"\n      ) {\n        throw new Error(\n          `authorized_actions[${index}].target.type is required`\n        );\n      }\n\n\n      if (\n        typeof action.target.value !== \"string\" ||\n        action.target.value.trim() === \"\"\n      ) {\n        throw new Error(\n          `authorized_actions[${index}].target.value is required`\n        );\n      }\n\n\n      if (\n        action.approval_request_id !==\n        approval.approval_request_id\n      ) {\n        throw new Error(\n          `authorized_actions[${index}] approval_request_id mismatch`\n        );\n      }\n\n\n      if (\n        typeof action.approved_by !== \"string\" ||\n        action.approved_by.trim() === \"\"\n      ) {\n        throw new Error(\n          `authorized_actions[${index}].approved_by is required`\n        );\n      }\n\n\n      if (\n        typeof action.approved_at !== \"string\" ||\n        Number.isNaN(\n          Date.parse(action.approved_at)\n        )\n      ) {\n        throw new Error(\n          `authorized_actions[${index}].approved_at must be a valid ISO timestamp`\n        );\n      }\n\n\n      return {\n\n        execution_id:\n          `${approval.alert_id}-${action.action_id}`,\n\n        action_id:\n          action.action_id,\n\n        action:\n          action.action,\n\n        target:\n          {\n            type:\n              action.target.type,\n\n            value:\n              action.target.value\n          },\n\n        priority:\n          action.priority || \"medium\",\n\n        reason:\n          action.reason || \"\",\n\n        evidence_sources:\n          Array.isArray(action.evidence_sources)\n            ? action.evidence_sources\n            : [],\n\n        authorization:\n          {\n            approval_request_id:\n              approval.approval_request_id,\n\n            approved_by:\n              action.approved_by,\n\n            approved_at:\n              action.approved_at\n          }\n      };\n    }\n  );\n\n\n// --------------------------------------------------\n// 3. Build execution authorization envelope\n// --------------------------------------------------\n\nreturn [\n  {\n    json: {\n\n      response_execution_authorization_version:\n        \"1.0\",\n\n      alert_id:\n        approval.alert_id,\n\n      status:\n        \"authorized_for_execution\",\n\n      execution_authorized:\n        true,\n\n      approval_request_id:\n        approval.approval_request_id,\n\n      authorized_action_count:\n        canonicalActions.length,\n\n      authorized_actions:\n        canonicalActions\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2944,
+        -192
+      ],
+      "id": "27aa2d53-04a8-41ef-957c-f92ade05d6ab",
+      "name": "Authorized Response Actions"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// Response Execution Not Authorized\n//\n// Terminal control path when the approval state does\n// not authorize execution.\n// ==================================================\n\nconst input = $json;\n\n\nreturn [\n  {\n    json: {\n\n      response_execution_authorization_version:\n        \"1.0\",\n\n      alert_id:\n        input?.alert_id ?? null,\n\n      status:\n        \"not_authorized\",\n\n      execution_authorized:\n        false,\n\n      approval_valid:\n        input?.valid === true,\n\n      approved:\n        input?.approved === true,\n\n      rejected:\n        input?.rejected === true,\n\n      errors:\n        Array.isArray(input?.errors)\n          ? input.errors\n          : [],\n\n      authorized_actions:\n        []\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2944,
+        0
+      ],
+      "id": "b4ee1062-26cf-4046-903a-e62f7b69121d",
+      "name": "Response Execution Not Authorized"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Canonical Investigation Result Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Canonical Investigation Result Input": {
+      "main": [
+        [
+          {
+            "node": "Response Context Builder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response Context Builder": {
+      "main": [
+        [
+          {
+            "node": "Response Planner Request Builder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response Planner Request Builder": {
+      "main": [
+        [
+          {
+            "node": "Ollama Response Planner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Response Planner": {
+      "main": [
+        [
+          {
+            "node": "Response Plan Approval Test",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response Plan Validator": {
+      "main": [
+        [
+          {
+            "node": "Response Policy Evaluator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response Plan Approval Test": {
+      "main": [
+        [
+          {
+            "node": "Response Plan Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response Policy Evaluator": {
+      "main": [
+        [
+          {
+            "node": "Requires Human Approval?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Requires Human Approval?": {
+      "main": [
+        [
+          {
+            "node": "Approval Request Builder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approval Request Builder": {
+      "main": [
+        [
+          {
+            "node": "Human Approval Test Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Human Approval Test Input": {
+      "main": [
+        [
+          {
+            "node": "Approval Decision Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approval Decision Validator": {
+      "main": [
+        [
+          {
+            "node": "Execution Authorization Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execution Authorization Gate": {
+      "main": [
+        [
+          {
+            "node": "Authorized Response Actions",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Response Execution Not Authorized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "ef67c2e5-1ef3-4e24-ba77-034ef8e26dd3",
+  "meta": {
+    "instanceId": "b2d82f9ccdb8bc424a72b8529b63d9b32a1170e9eed34f0a8c38afe810fb7c9d"
+  },
+  "nodeGroups": [],
+  "id": "sjmkLFEMkgVG52Sh",
+  "tags": []
+}

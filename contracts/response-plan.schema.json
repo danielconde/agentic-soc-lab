@@ -1,0 +1,20 @@
+{
+  "response_plan_version": "1.0",
+  "alert_id": "ALERT-0001",
+  "verdict": "malicious",
+  "actions": [
+    {
+      "action_id": "action-1",
+      "action": "revoke_sessions",
+      "target": {
+        "type": "user",
+        "value": "john.doe@example.com"
+      },
+      "reason": "Validated evidence supporting the proposed response.",
+      "evidence_sources": [
+        "get_signins"
+      ],
+      "priority": "high"
+    }
+  ]
+}
