@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-soc-lab.local/schemas/tools/get-endpoint-activity/input.schema.json",
+  "title": "get_endpoint_activity Input",
+  "description": "Canonical input contract for the get_endpoint_activity investigation tool.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "host"
+  ],
+  "properties": {
+    "host": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "time_range": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "end"
+      ],
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "end": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500
+    }
+  }
+}
