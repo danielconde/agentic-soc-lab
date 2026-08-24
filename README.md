@@ -102,7 +102,12 @@ La guía completa está disponible en:
 4. [`docs/04-analisis-llm-inicial.md`](docs/04-analisis-llm-inicial.md)  
    Contexto de investigación, análisis estructurado con Qwen y validación determinista de la salida.
 
+5. [`docs/05-investigation-planner.md`](docs/05-investigation-planner.md)  
+   Generación de planes de investigación con Qwen, allowlist de herramientas, validación determinista de capacidades y parámetros, rama de error controlada y reparación automática de planes inválidos.
 
+6. [`docs/06-tool-contracts-tool-router.md`](docs/06-tool-contracts-tool-router.md)  
+   Contratos de herramientas, validación de requests, Tool Router, connector `get_signins` en modo mock, validación de salida y pruebas negativas de seguridad.
+   
 ## Roadmap técnico
 
 ```text

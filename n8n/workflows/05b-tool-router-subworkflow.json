@@ -1,0 +1,349 @@
+{
+  "name": "05b - Tool Router Subworkflow",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// Tool Request Validator\n//\n// Validates tool execution requests before routing.\n//\n// Supported tools:\n// - get_signins\n// - get_endpoint_activity\n//\n// Requests are treated as untrusted input.\n// ==================================================\n\nconst request = $json;\n\nconst errors = [];\n\n\n// --------------------------------------------------\n// 1. Helpers\n// --------------------------------------------------\n\nfunction requireString(field, value) {\n  if (\n    typeof value !== \"string\" ||\n    value.trim() === \"\"\n  ) {\n    errors.push(\n      `${field} must be a non-empty string`\n    );\n  }\n}\n\n\nfunction validateTimeRange(\n  fieldPrefix,\n  timeRange\n) {\n\n  if (\n    typeof timeRange !== \"object\" ||\n    timeRange === null ||\n    Array.isArray(timeRange)\n  ) {\n    errors.push(\n      `${fieldPrefix} must be an object`\n    );\n\n    return;\n  }\n\n\n  const allowedFields = [\n    \"start\",\n    \"end\"\n  ];\n\n\n  for (\n    const field\n    of Object.keys(timeRange)\n  ) {\n\n    if (\n      !allowedFields.includes(field)\n    ) {\n      errors.push(\n        `${fieldPrefix}.${field} is not allowed`\n      );\n    }\n  }\n\n\n  if (\n    typeof timeRange.start !== \"string\" ||\n    Number.isNaN(\n      Date.parse(timeRange.start)\n    )\n  ) {\n    errors.push(\n      `${fieldPrefix}.start must be a valid ISO 8601 timestamp`\n    );\n  }\n\n\n  if (\n    typeof timeRange.end !== \"string\" ||\n    Number.isNaN(\n      Date.parse(timeRange.end)\n    )\n  ) {\n    errors.push(\n      `${fieldPrefix}.end must be a valid ISO 8601 timestamp`\n    );\n  }\n\n\n  if (\n    typeof timeRange.start === \"string\" &&\n    typeof timeRange.end === \"string\" &&\n    !Number.isNaN(\n      Date.parse(timeRange.start)\n    ) &&\n    !Number.isNaN(\n      Date.parse(timeRange.end)\n    ) &&\n    Date.parse(timeRange.start) >\n      Date.parse(timeRange.end)\n  ) {\n    errors.push(\n      `${fieldPrefix}.start must be before or equal to end`\n    );\n  }\n}\n\n\n// --------------------------------------------------\n// 2. Basic request validation\n// --------------------------------------------------\n\nrequireString(\n  \"alert_id\",\n  request.alert_id\n);\n\nrequireString(\n  \"step_id\",\n  request.step_id\n);\n\nrequireString(\n  \"tool\",\n  request.tool\n);\n\n\nif (\n  typeof request.step_id === \"string\" &&\n  !/^step-[0-9]+$/.test(\n    request.step_id\n  )\n) {\n  errors.push(\n    \"step_id must match the format step-N\"\n  );\n}\n\n\n// --------------------------------------------------\n// 3. Parameters object\n// --------------------------------------------------\n\nif (\n  typeof request.parameters !== \"object\" ||\n  request.parameters === null ||\n  Array.isArray(request.parameters)\n) {\n  errors.push(\n    \"parameters must be an object\"\n  );\n}\n\n\n// --------------------------------------------------\n// 4. Tool policies\n// --------------------------------------------------\n\nconst toolPolicies = {\n\n  get_signins: {\n    requiredParameters: [\n      \"user\"\n    ],\n\n    allowedParameters: [\n      \"user\",\n      \"time_range\",\n      \"limit\"\n    ]\n  },\n\n\n  get_endpoint_activity: {\n    requiredParameters: [\n      \"host\"\n    ],\n\n    allowedParameters: [\n      \"host\",\n      \"time_range\",\n      \"limit\"\n    ]\n  }\n\n};\n\n\n// --------------------------------------------------\n// 5. Tool allowlist\n// --------------------------------------------------\n\nif (\n  typeof request.tool === \"string\" &&\n  !Object.prototype.hasOwnProperty.call(\n    toolPolicies,\n    request.tool\n  )\n) {\n  errors.push(\n    `tool '${request.tool}' is not supported`\n  );\n}\n\n\n// --------------------------------------------------\n// 6. Generic tool parameter validation\n// --------------------------------------------------\n\nif (\n  typeof request.tool === \"string\" &&\n  Object.prototype.hasOwnProperty.call(\n    toolPolicies,\n    request.tool\n  ) &&\n  typeof request.parameters === \"object\" &&\n  request.parameters !== null &&\n  !Array.isArray(request.parameters)\n) {\n\n  const policy =\n    toolPolicies[request.tool];\n\n\n  // Required parameters\n\n  for (\n    const parameter\n    of policy.requiredParameters\n  ) {\n\n    if (\n      !Object.prototype.hasOwnProperty.call(\n        request.parameters,\n        parameter\n      )\n    ) {\n      errors.push(\n        `parameters.${parameter} is required for ${request.tool}`\n      );\n    }\n  }\n\n\n  // Unexpected parameters\n\n  for (\n    const parameter\n    of Object.keys(\n      request.parameters\n    )\n  ) {\n\n    if (\n      !policy.allowedParameters.includes(\n        parameter\n      )\n    ) {\n      errors.push(\n        `parameters.${parameter} is not allowed for ${request.tool}`\n      );\n    }\n  }\n}\n\n\n// --------------------------------------------------\n// 7. get_signins validation\n// --------------------------------------------------\n\nif (\n  request.tool === \"get_signins\" &&\n  typeof request.parameters === \"object\" &&\n  request.parameters !== null &&\n  !Array.isArray(request.parameters)\n) {\n\n  const {\n    user,\n    time_range,\n    limit\n  } = request.parameters;\n\n\n  if (\n    typeof user !== \"string\" ||\n    user.trim() === \"\"\n  ) {\n    errors.push(\n      \"parameters.user must be a non-empty string\"\n    );\n  }\n\n\n  if (\n    typeof user === \"string\" &&\n    user.length > 320\n  ) {\n    errors.push(\n      \"parameters.user must not exceed 320 characters\"\n    );\n  }\n\n\n  if (limit !== undefined) {\n\n    if (\n      !Number.isInteger(limit) ||\n      limit < 1 ||\n      limit > 500\n    ) {\n      errors.push(\n        \"parameters.limit must be an integer between 1 and 500\"\n      );\n    }\n  }\n\n\n  if (time_range !== undefined) {\n    validateTimeRange(\n      \"parameters.time_range\",\n      time_range\n    );\n  }\n}\n\n\n// --------------------------------------------------\n// 8. get_endpoint_activity validation\n// --------------------------------------------------\n\nif (\n  request.tool ===\n    \"get_endpoint_activity\" &&\n  typeof request.parameters === \"object\" &&\n  request.parameters !== null &&\n  !Array.isArray(request.parameters)\n) {\n\n  const {\n    host,\n    time_range,\n    limit\n  } = request.parameters;\n\n\n  if (\n    typeof host !== \"string\" ||\n    host.trim() === \"\"\n  ) {\n    errors.push(\n      \"parameters.host must be a non-empty string\"\n    );\n  }\n\n\n  if (\n    typeof host === \"string\" &&\n    host.length > 255\n  ) {\n    errors.push(\n      \"parameters.host must not exceed 255 characters\"\n    );\n  }\n\n\n  if (limit !== undefined) {\n\n    if (\n      !Number.isInteger(limit) ||\n      limit < 1 ||\n      limit > 500\n    ) {\n      errors.push(\n        \"parameters.limit must be an integer between 1 and 500\"\n      );\n    }\n  }\n\n\n  if (time_range !== undefined) {\n    validateTimeRange(\n      \"parameters.time_range\",\n      time_range\n    );\n  }\n}\n\n\n// --------------------------------------------------\n// 9. Controlled validation output\n// --------------------------------------------------\n\nreturn [\n  {\n    json: {\n      valid:\n        errors.length === 0,\n\n      errors,\n\n      request\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ],
+      "id": "6bcbaaca-005c-426d-badd-25fec3aef742",
+      "name": "Tool Request Validator"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "dd0e291a-b9e0-4edd-bcbb-cdfacc8d5a49",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        672,
+        0
+      ],
+      "id": "47f402f4-a4af-4065-9983-a3282efe3515",
+      "name": "Tool Request Valid?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const validationResult = $json;\n\nreturn [\n  {\n    json: {\n      status: \"rejected\",\n\n      reason:\n        \"tool_request_validation_failed\",\n\n      errors:\n        validationResult.errors || [],\n\n      request:\n        validationResult.request || null\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        96
+      ],
+      "id": "50cd5c81-98ce-415a-a68a-52f4524a0d75",
+      "name": "Rejected Tool Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const validationResult = $json;\n\nif (validationResult.valid !== true) {\n  throw new Error(\n    \"Validated Tool Request received an invalid request\"\n  );\n}\n\nreturn [\n  {\n    json: validationResult.request\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        -96
+      ],
+      "id": "cb9965b1-960b-4d9f-978c-c81dee494562",
+      "name": "Validated Tool Request"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tool }}",
+                    "rightValue": "get_signins",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "d844cd9b-4517-4b60-a801-f807269b45f1"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "fc3a9b2d-8dc3-4e07-b74f-372fded4e159",
+                    "leftValue": "={{ $json.tool }}",
+                    "rightValue": "get_endpoint_activity",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": "=",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1120,
+        -96
+      ],
+      "id": "2c9acb8f-9e87-4419-845d-67b8d1085125",
+      "name": "Tool Router"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// get_signins Mock Connector\n//\n// Simulates a security data source.\n//\n// No real API call is performed.\n// ==================================================\n\nconst request = $json;\n\nconst parameters =\n  request.parameters || {};\n\nconst user =\n  parameters.user;\n\nconst timeRange =\n  parameters.time_range || null;\n\nconst limit =\n  parameters.limit || 100;\n\n\n// --------------------------------------------------\n// Simulated provider events\n// --------------------------------------------------\n\nconst simulatedEvents = [\n\n  {\n    timestamp:\n      \"2026-08-23T17:20:00Z\",\n\n    user:\n      \"john.doe@example.com\",\n\n    source_ip:\n      \"185.220.101.20\",\n\n    status:\n      \"success\",\n\n    authentication_method:\n      \"MFA\",\n\n    application:\n      \"Microsoft 365\",\n\n    device:\n      \"WIN11-LAPTOP-01\",\n\n    location: {\n      country:\n        \"Spain\",\n\n      city:\n        \"Madrid\"\n    }\n  },\n\n\n  {\n    timestamp:\n      \"2026-08-23T17:42:00Z\",\n\n    user:\n      \"john.doe@example.com\",\n\n    source_ip:\n      \"91.198.174.20\",\n\n    status:\n      \"success\",\n\n    authentication_method:\n      \"MFA\",\n\n    application:\n      \"Microsoft 365\",\n\n    device:\n      null,\n\n    location: {\n      country:\n        \"Netherlands\",\n\n      city:\n        \"Amsterdam\"\n    }\n  }\n\n];\n\n\n// --------------------------------------------------\n// Filter by requested user\n// --------------------------------------------------\n\nlet events =\n  simulatedEvents.filter(\n    event =>\n      event.user === user\n  );\n\n\n// --------------------------------------------------\n// Optional time range\n// --------------------------------------------------\n\nif (timeRange) {\n\n  const start =\n    Date.parse(timeRange.start);\n\n  const end =\n    Date.parse(timeRange.end);\n\n  events =\n    events.filter(event => {\n\n      const timestamp =\n        Date.parse(event.timestamp);\n\n      return (\n        timestamp >= start &&\n        timestamp <= end\n      );\n    });\n}\n\n\n// --------------------------------------------------\n// Apply limit\n// --------------------------------------------------\n\nevents =\n  events.slice(0, limit);\n\n\n// --------------------------------------------------\n// Canonical tool result\n// --------------------------------------------------\n\nreturn [\n  {\n    json: {\n      tool:\n        \"get_signins\",\n\n      tool_version:\n        \"1.0\",\n\n      status:\n        \"success\",\n\n      query: {\n        user,\n        time_range:\n          timeRange\n      },\n\n      result_count:\n        events.length,\n\n      events,\n\n      error:\n        null\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        -96
+      ],
+      "id": "34d79fb0-66c9-4fbd-98d8-94c58ebeb9d2",
+      "name": "get_signins Mock"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// get_signins Output Validator\n//\n// Deterministically validates the canonical output\n// produced by the get_signins connector.\n// ==================================================\n\nconst result = $json;\n\nconst errors = [];\n\n\n// --------------------------------------------------\n// Helpers\n// --------------------------------------------------\n\nfunction requireString(field, value) {\n  if (\n    typeof value !== \"string\" ||\n    value.trim() === \"\"\n  ) {\n    errors.push(\n      `${field} must be a non-empty string`\n    );\n  }\n}\n\n\nfunction validDate(value) {\n  return (\n    typeof value === \"string\" &&\n    !Number.isNaN(Date.parse(value))\n  );\n}\n\n\n// --------------------------------------------------\n// Top-level validation\n// --------------------------------------------------\n\nif (result.tool !== \"get_signins\") {\n  errors.push(\n    \"tool must be 'get_signins'\"\n  );\n}\n\n\nif (result.tool_version !== \"1.0\") {\n  errors.push(\n    \"tool_version must be '1.0'\"\n  );\n}\n\n\nconst validStatuses = [\n  \"success\",\n  \"partial\",\n  \"error\"\n];\n\nif (\n  !validStatuses.includes(\n    result.status\n  )\n) {\n  errors.push(\n    \"status contains an invalid value\"\n  );\n}\n\n\n// --------------------------------------------------\n// Query validation\n// --------------------------------------------------\n\nif (\n  typeof result.query !== \"object\" ||\n  result.query === null ||\n  Array.isArray(result.query)\n) {\n  errors.push(\n    \"query must be an object\"\n  );\n} else {\n\n  requireString(\n    \"query.user\",\n    result.query.user\n  );\n\n\n  if (\n    result.query.time_range !== null &&\n    result.query.time_range !== undefined\n  ) {\n\n    if (\n      typeof result.query.time_range !== \"object\" ||\n      Array.isArray(result.query.time_range)\n    ) {\n      errors.push(\n        \"query.time_range must be an object or null\"\n      );\n    } else {\n\n      if (\n        !validDate(\n          result.query.time_range.start\n        )\n      ) {\n        errors.push(\n          \"query.time_range.start must be a valid timestamp\"\n        );\n      }\n\n      if (\n        !validDate(\n          result.query.time_range.end\n        )\n      ) {\n        errors.push(\n          \"query.time_range.end must be a valid timestamp\"\n        );\n      }\n    }\n  }\n}\n\n\n// --------------------------------------------------\n// result_count\n// --------------------------------------------------\n\nif (\n  !Number.isInteger(\n    result.result_count\n  ) ||\n  result.result_count < 0\n) {\n  errors.push(\n    \"result_count must be a non-negative integer\"\n  );\n}\n\n\n// --------------------------------------------------\n// events\n// --------------------------------------------------\n\nif (!Array.isArray(result.events)) {\n\n  errors.push(\n    \"events must be an array\"\n  );\n\n} else {\n\n  if (\n    Number.isInteger(result.result_count) &&\n    result.result_count !==\n      result.events.length\n  ) {\n    errors.push(\n      \"result_count does not match events.length\"\n    );\n  }\n\n\n  const validEventStatuses = [\n    \"success\",\n    \"failure\",\n    \"unknown\"\n  ];\n\n\n  result.events.forEach(\n    (event, index) => {\n\n      const prefix =\n        `events[${index}]`;\n\n\n      if (\n        typeof event !== \"object\" ||\n        event === null ||\n        Array.isArray(event)\n      ) {\n        errors.push(\n          `${prefix} must be an object`\n        );\n\n        return;\n      }\n\n\n      if (\n        !validDate(\n          event.timestamp\n        )\n      ) {\n        errors.push(\n          `${prefix}.timestamp must be a valid timestamp`\n        );\n      }\n\n\n      requireString(\n        `${prefix}.user`,\n        event.user\n      );\n\n\n      if (\n        event.source_ip !== null &&\n        typeof event.source_ip !== \"string\"\n      ) {\n        errors.push(\n          `${prefix}.source_ip must be a string or null`\n        );\n      }\n\n\n      if (\n        !validEventStatuses.includes(\n          event.status\n        )\n      ) {\n        errors.push(\n          `${prefix}.status contains an invalid value`\n        );\n      }\n\n\n      if (\n        event.authentication_method !== null &&\n        event.authentication_method !== undefined &&\n        typeof event.authentication_method !== \"string\"\n      ) {\n        errors.push(\n          `${prefix}.authentication_method must be a string or null`\n        );\n      }\n\n\n      if (\n        event.application !== null &&\n        event.application !== undefined &&\n        typeof event.application !== \"string\"\n      ) {\n        errors.push(\n          `${prefix}.application must be a string or null`\n        );\n      }\n\n\n      if (\n        event.device !== null &&\n        event.device !== undefined &&\n        typeof event.device !== \"string\"\n      ) {\n        errors.push(\n          `${prefix}.device must be a string or null`\n        );\n      }\n\n\n      if (\n        event.location !== null &&\n        event.location !== undefined\n      ) {\n\n        if (\n          typeof event.location !== \"object\" ||\n          Array.isArray(event.location)\n        ) {\n          errors.push(\n            `${prefix}.location must be an object or null`\n          );\n        } else {\n\n          if (\n            event.location.country !== null &&\n            event.location.country !== undefined &&\n            typeof event.location.country !== \"string\"\n          ) {\n            errors.push(\n              `${prefix}.location.country must be a string or null`\n            );\n          }\n\n\n          if (\n            event.location.city !== null &&\n            event.location.city !== undefined &&\n            typeof event.location.city !== \"string\"\n          ) {\n            errors.push(\n              `${prefix}.location.city must be a string or null`\n            );\n          }\n        }\n      }\n    }\n  );\n}\n\n\n// --------------------------------------------------\n// error\n// --------------------------------------------------\n\nif (\n  result.error !== null &&\n  result.error !== undefined\n) {\n\n  if (\n    typeof result.error !== \"object\" ||\n    Array.isArray(result.error)\n  ) {\n    errors.push(\n      \"error must be an object or null\"\n    );\n  } else {\n\n    requireString(\n      \"error.code\",\n      result.error.code\n    );\n\n    requireString(\n      \"error.message\",\n      result.error.message\n    );\n  }\n}\n\n\n// --------------------------------------------------\n// Reject invalid connector output\n// --------------------------------------------------\n\nif (errors.length > 0) {\n  throw new Error(\n    `get_signins output validation failed: ${errors.join(\"; \")}`\n  );\n}\n\n\n// --------------------------------------------------\n// Canonical result\n// --------------------------------------------------\n\nreturn [\n  {\n    json: result\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        -96
+      ],
+      "id": "1d740492-19f8-4d6a-ac6d-e9ff97815eab",
+      "name": "get_signins Output Validator"
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $json;\n\nreturn [\n  {\n    json: {\n      evidence_version:\n        \"1.0\",\n\n      source:\n        \"tool\",\n\n      tool:\n        result.tool,\n\n      tool_version:\n        result.tool_version,\n\n      status:\n        result.status,\n\n      query:\n        result.query,\n\n      result_count:\n        result.result_count,\n\n      evidence:\n        result.events,\n\n      error:\n        result.error\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        -16
+      ],
+      "id": "027e8da2-e6aa-4bff-a630-fadfa9894346",
+      "name": "Canonical Tool Result"
+    },
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"request_version\": \"1.0\",\n  \"alert_id\": \"ALERT-0001\",\n  \"step_id\": \"step-1\",\n  \"tool\": \"get_signins\",\n  \"parameters\": {\n    \"user\": \"john.doe@example.com\"\n  },\n  \"context\": {\n    \"priority\": \"high\",\n    \"purpose\": \"Collect historical sign-in data to assess unusual authentication patterns.\",\n    \"evidence_target\": \"Historical authentication events for the observed user.\"\n  }\n}"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "07441c49-68ab-422c-a457-dceda14f86ff",
+      "name": "When Called by Orchestrator"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// get_endpoint_activity Mock Connector\n//\n// Simulates endpoint telemetry.\n//\n// No real EDR/XDR API is queried.\n// ==================================================\n\nconst request = $json;\n\nconst parameters =\n  request.parameters || {};\n\nconst host =\n  parameters.host;\n\nconst timeRange =\n  parameters.time_range || null;\n\nconst limit =\n  parameters.limit || 100;\n\n\n// --------------------------------------------------\n// 1. Simulated endpoint telemetry\n// --------------------------------------------------\n\nconst simulatedEvents = [\n\n  {\n    timestamp:\n      \"2026-08-23T17:25:00Z\",\n\n    host:\n      \"WIN11-LAPTOP-01\",\n\n    event_type:\n      \"user_logon\",\n\n    severity:\n      \"informational\",\n\n    user:\n      \"john.doe@example.com\",\n\n    process:\n      null,\n\n    network:\n      null\n  },\n\n\n  {\n    timestamp:\n      \"2026-08-23T17:36:00Z\",\n\n    host:\n      \"WIN11-LAPTOP-01\",\n\n    event_type:\n      \"process_execution\",\n\n    severity:\n      \"medium\",\n\n    user:\n      \"john.doe@example.com\",\n\n    process: {\n      name:\n        \"powershell.exe\",\n\n      command_line:\n        \"powershell.exe -NoProfile -Command Get-Process\",\n\n      parent_process:\n        \"explorer.exe\"\n    },\n\n    network:\n      null\n  },\n\n\n  {\n    timestamp:\n      \"2026-08-23T17:39:00Z\",\n\n    host:\n      \"WIN11-LAPTOP-01\",\n\n    event_type:\n      \"network_connection\",\n\n    severity:\n      \"low\",\n\n    user:\n      \"john.doe@example.com\",\n\n    process: {\n      name:\n        \"msedge.exe\",\n\n      command_line:\n        null,\n\n      parent_process:\n        \"explorer.exe\"\n    },\n\n    network: {\n      destination_ip:\n        \"20.190.128.25\",\n\n      destination_port:\n        443\n    }\n  }\n\n];\n\n\n// --------------------------------------------------\n// 2. Filter by requested host\n// --------------------------------------------------\n\nlet events =\n  simulatedEvents.filter(\n    event =>\n      event.host === host\n  );\n\n\n// --------------------------------------------------\n// 3. Optional time range\n// --------------------------------------------------\n\nif (timeRange) {\n\n  const start =\n    Date.parse(\n      timeRange.start\n    );\n\n  const end =\n    Date.parse(\n      timeRange.end\n    );\n\n\n  events =\n    events.filter(\n      event => {\n\n        const timestamp =\n          Date.parse(\n            event.timestamp\n          );\n\n        return (\n          timestamp >= start &&\n          timestamp <= end\n        );\n      }\n    );\n}\n\n\n// --------------------------------------------------\n// 4. Apply limit\n// --------------------------------------------------\n\nevents =\n  events.slice(\n    0,\n    limit\n  );\n\n\n// --------------------------------------------------\n// 5. Canonical tool result\n// --------------------------------------------------\n\nreturn [\n  {\n    json: {\n      tool:\n        \"get_endpoint_activity\",\n\n      tool_version:\n        \"1.0\",\n\n      status:\n        \"success\",\n\n      query: {\n        host,\n\n        time_range:\n          timeRange\n      },\n\n      result_count:\n        events.length,\n\n      events,\n\n      error:\n        null\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        64
+      ],
+      "id": "dbc6b66c-7dc5-4cd0-9b4c-ea893369b98d",
+      "name": "get_endpoint_activity Mock"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// get_endpoint_activity Output Validator\n//\n// Deterministically validates endpoint telemetry.\n// ==================================================\n\nconst result = $json;\n\nconst errors = [];\n\n\n// --------------------------------------------------\n// Helpers\n// --------------------------------------------------\n\nfunction requireString(\n  field,\n  value\n) {\n\n  if (\n    typeof value !== \"string\" ||\n    value.trim() === \"\"\n  ) {\n    errors.push(\n      `${field} must be a non-empty string`\n    );\n  }\n}\n\n\nfunction validDate(\n  value\n) {\n\n  return (\n    typeof value === \"string\" &&\n    !Number.isNaN(\n      Date.parse(value)\n    )\n  );\n}\n\n\n// --------------------------------------------------\n// 1. Tool metadata\n// --------------------------------------------------\n\nif (\n  result.tool !==\n    \"get_endpoint_activity\"\n) {\n  errors.push(\n    \"tool must be 'get_endpoint_activity'\"\n  );\n}\n\n\nif (\n  result.tool_version !== \"1.0\"\n) {\n  errors.push(\n    \"tool_version must be '1.0'\"\n  );\n}\n\n\nconst validStatuses = [\n  \"success\",\n  \"partial\",\n  \"error\"\n];\n\n\nif (\n  !validStatuses.includes(\n    result.status\n  )\n) {\n  errors.push(\n    \"status contains an invalid value\"\n  );\n}\n\n\n// --------------------------------------------------\n// 2. Query\n// --------------------------------------------------\n\nif (\n  typeof result.query !== \"object\" ||\n  result.query === null ||\n  Array.isArray(result.query)\n) {\n\n  errors.push(\n    \"query must be an object\"\n  );\n\n} else {\n\n  requireString(\n    \"query.host\",\n    result.query.host\n  );\n\n\n  if (\n    result.query.time_range !== null &&\n    result.query.time_range !== undefined\n  ) {\n\n    if (\n      typeof result.query.time_range !== \"object\" ||\n      result.query.time_range === null ||\n      Array.isArray(\n        result.query.time_range\n      )\n    ) {\n\n      errors.push(\n        \"query.time_range must be an object or null\"\n      );\n\n    } else {\n\n      if (\n        !validDate(\n          result.query.time_range.start\n        )\n      ) {\n        errors.push(\n          \"query.time_range.start must be a valid timestamp\"\n        );\n      }\n\n\n      if (\n        !validDate(\n          result.query.time_range.end\n        )\n      ) {\n        errors.push(\n          \"query.time_range.end must be a valid timestamp\"\n        );\n      }\n    }\n  }\n}\n\n\n// --------------------------------------------------\n// 3. result_count\n// --------------------------------------------------\n\nif (\n  !Number.isInteger(\n    result.result_count\n  ) ||\n  result.result_count < 0\n) {\n  errors.push(\n    \"result_count must be a non-negative integer\"\n  );\n}\n\n\n// --------------------------------------------------\n// 4. Events\n// --------------------------------------------------\n\nif (\n  !Array.isArray(\n    result.events\n  )\n) {\n\n  errors.push(\n    \"events must be an array\"\n  );\n\n} else {\n\n  if (\n    Number.isInteger(\n      result.result_count\n    ) &&\n    result.result_count !==\n      result.events.length\n  ) {\n    errors.push(\n      \"result_count does not match events.length\"\n    );\n  }\n\n\n  const validSeverities = [\n    \"informational\",\n    \"low\",\n    \"medium\",\n    \"high\",\n    \"critical\",\n    \"unknown\"\n  ];\n\n\n  result.events.forEach(\n    (event, index) => {\n\n      const prefix =\n        `events[${index}]`;\n\n\n      if (\n        typeof event !== \"object\" ||\n        event === null ||\n        Array.isArray(event)\n      ) {\n\n        errors.push(\n          `${prefix} must be an object`\n        );\n\n        return;\n      }\n\n\n      // Timestamp\n\n      if (\n        !validDate(\n          event.timestamp\n        )\n      ) {\n        errors.push(\n          `${prefix}.timestamp must be a valid timestamp`\n        );\n      }\n\n\n      // Host\n\n      requireString(\n        `${prefix}.host`,\n        event.host\n      );\n\n\n      // Event type\n\n      requireString(\n        `${prefix}.event_type`,\n        event.event_type\n      );\n\n\n      // Severity\n\n      if (\n        !validSeverities.includes(\n          event.severity\n        )\n      ) {\n        errors.push(\n          `${prefix}.severity contains an invalid value`\n        );\n      }\n\n\n      // User\n\n      if (\n        event.user !== null &&\n        event.user !== undefined &&\n        typeof event.user !== \"string\"\n      ) {\n        errors.push(\n          `${prefix}.user must be a string or null`\n        );\n      }\n\n\n      // Process\n\n      if (\n        event.process !== null &&\n        event.process !== undefined\n      ) {\n\n        if (\n          typeof event.process !== \"object\" ||\n          event.process === null ||\n          Array.isArray(\n            event.process\n          )\n        ) {\n\n          errors.push(\n            `${prefix}.process must be an object or null`\n          );\n\n        } else {\n\n          const processFields = [\n            \"name\",\n            \"command_line\",\n            \"parent_process\"\n          ];\n\n\n          for (\n            const field\n            of processFields\n          ) {\n\n            if (\n              event.process[field] !== null &&\n              event.process[field] !== undefined &&\n              typeof event.process[field] !== \"string\"\n            ) {\n              errors.push(\n                `${prefix}.process.${field} must be a string or null`\n              );\n            }\n          }\n        }\n      }\n\n\n      // Network\n\n      if (\n        event.network !== null &&\n        event.network !== undefined\n      ) {\n\n        if (\n          typeof event.network !== \"object\" ||\n          event.network === null ||\n          Array.isArray(\n            event.network\n          )\n        ) {\n\n          errors.push(\n            `${prefix}.network must be an object or null`\n          );\n\n        } else {\n\n          if (\n            event.network.destination_ip !== null &&\n            event.network.destination_ip !== undefined &&\n            typeof event.network.destination_ip !== \"string\"\n          ) {\n            errors.push(\n              `${prefix}.network.destination_ip must be a string or null`\n            );\n          }\n\n\n          if (\n            event.network.destination_port !== null &&\n            event.network.destination_port !== undefined &&\n            !Number.isInteger(\n              event.network.destination_port\n            )\n          ) {\n            errors.push(\n              `${prefix}.network.destination_port must be an integer or null`\n            );\n          }\n        }\n      }\n    }\n  );\n}\n\n\n// --------------------------------------------------\n// 5. Error object\n// --------------------------------------------------\n\nif (\n  result.error !== null &&\n  result.error !== undefined\n) {\n\n  if (\n    typeof result.error !== \"object\" ||\n    result.error === null ||\n    Array.isArray(\n      result.error\n    )\n  ) {\n\n    errors.push(\n      \"error must be an object or null\"\n    );\n\n  } else {\n\n    requireString(\n      \"error.code\",\n      result.error.code\n    );\n\n    requireString(\n      \"error.message\",\n      result.error.message\n    );\n  }\n}\n\n\n// --------------------------------------------------\n// 6. Reject corrupt connector output\n// --------------------------------------------------\n\nif (\n  errors.length > 0\n) {\n  throw new Error(\n    `get_endpoint_activity output validation failed: ${errors.join(\"; \")}`\n  );\n}\n\n\n// --------------------------------------------------\n// 7. Return validated connector result\n// --------------------------------------------------\n\nreturn [\n  {\n    json: result\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        64
+      ],
+      "id": "2c5bb663-4078-44c8-aa94-73ed09f978ed",
+      "name": "get_endpoint_activity Output Validator"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Tool Request Validator": {
+      "main": [
+        [
+          {
+            "node": "Tool Request Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool Request Valid?": {
+      "main": [
+        [
+          {
+            "node": "Validated Tool Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rejected Tool Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validated Tool Request": {
+      "main": [
+        [
+          {
+            "node": "Tool Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool Router": {
+      "main": [
+        [
+          {
+            "node": "get_signins Mock",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "get_endpoint_activity Mock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_signins Mock": {
+      "main": [
+        [
+          {
+            "node": "get_signins Output Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_signins Output Validator": {
+      "main": [
+        [
+          {
+            "node": "Canonical Tool Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Called by Orchestrator": {
+      "main": [
+        [
+          {
+            "node": "Tool Request Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_endpoint_activity Mock": {
+      "main": [
+        [
+          {
+            "node": "get_endpoint_activity Output Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_endpoint_activity Output Validator": {
+      "main": [
+        [
+          {
+            "node": "Canonical Tool Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "c6cb05fa-6bb5-4d6d-a4c1-86a4db6c7de2",
+  "meta": {
+    "instanceId": "b2d82f9ccdb8bc424a72b8529b63d9b32a1170e9eed34f0a8c38afe810fb7c9d"
+  },
+  "nodeGroups": [],
+  "id": "Fh7w7LH0YY8sLRe3",
+  "tags": []
+}
