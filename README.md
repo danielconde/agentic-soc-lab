@@ -107,6 +107,12 @@ La guía completa está disponible en:
 
 6. [`docs/06-tool-contracts-tool-router.md`](docs/06-tool-contracts-tool-router.md)  
    Contratos de herramientas, validación de requests, Tool Router, connector `get_signins` en modo mock, validación de salida y pruebas negativas de seguridad.
+
+7. [`docs/07-orquestacion-multiples-pasos.md`](docs/07-orquestacion-multiples-pasos.md)  
+   Orquestación multi-step, ejecución de tools mediante sub-workflow, `get_endpoint_activity`, agregación de evidencias y generación del Canonical Investigation Evidence Bundle.
+
+8. [`docs/08-evidence-based-investigation.md`](docs/08-evidence-based-investigation.md)  
+   Análisis basado en evidencias, validación determinista, repair de assessments y planes, orquestación iterativa, ejecución real de tools, capability evaluation y finalización controlada.
    
 ## Roadmap técnico
 

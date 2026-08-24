@@ -14,20 +14,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ==================================================\n// Validated Investigation Plan Input\n//\n// Simulates the canonical validated output produced\n// by:\n//\n// 04 - Investigation Planner\n// ==================================================\n\nreturn [\n  {\n    json: {\n      plan_version: \"1.0\",\n\n      alert_id: \"ALERT-0001\",\n\n      objective:\n        \"Verify available authentication and endpoint evidence related to the identity alert.\",\n\n      investigation_steps: [\n        {\n          step_id: \"step-1\",\n\n          priority: \"high\",\n\n          purpose:\n            \"Collect historical sign-in data to assess unusual authentication patterns.\",\n\n          tool:\n            \"get_signins\",\n\n          parameters: {\n            user:\n              \"john.doe@example.com\"\n          },\n\n          evidence_target:\n            \"Historical authentication events for the observed user.\"\n        },\n\n        {\n          step_id: \"step-2\",\n\n          priority: \"medium\",\n\n          purpose:\n            \"Collect endpoint activity associated with the observed host.\",\n\n          tool:\n            \"get_endpoint_activity\",\n\n          parameters: {\n            host:\n              \"WIN11-LAPTOP-01\"\n          },\n\n          evidence_target:\n            \"Endpoint security activity for the observed host.\"\n        }\n      ]\n    }\n  }\n];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -352,
-        0
-      ],
-      "id": "e4c31cb2-e0f2-4cc3-8dad-97a92d40aca7",
-      "name": "Validated Investigation Plan Input"
-    },
-    {
-      "parameters": {
-        "jsCode": "// ==================================================\n// Investigation Step Expander\n//\n// Converts one canonical investigation plan into\n// one n8n item per investigation step.\n// ==================================================\n\nconst plan = $json;\n\n\n// --------------------------------------------------\n// 1. Validate plan\n// --------------------------------------------------\n\nif (\n  typeof plan !== \"object\" ||\n  plan === null ||\n  Array.isArray(plan)\n) {\n  throw new Error(\n    \"Investigation Step Expander received an invalid plan\"\n  );\n}\n\n\nif (\n  typeof plan.alert_id !== \"string\" ||\n  plan.alert_id.trim() === \"\"\n) {\n  throw new Error(\n    \"Investigation Step Expander requires alert_id\"\n  );\n}\n\n\nif (\n  !Array.isArray(\n    plan.investigation_steps\n  )\n) {\n  throw new Error(\n    \"Investigation Step Expander requires investigation_steps\"\n  );\n}\n\n\nif (\n  plan.investigation_steps.length === 0\n) {\n  throw new Error(\n    \"Investigation Step Expander received an empty investigation plan\"\n  );\n}\n\n\n// --------------------------------------------------\n// 2. Expand steps\n// --------------------------------------------------\n\nconst items = [];\n\nfor (\n  let index = 0;\n  index < plan.investigation_steps.length;\n  index++\n) {\n\n  const step =\n    plan.investigation_steps[index];\n\n\n  if (\n    typeof step !== \"object\" ||\n    step === null ||\n    Array.isArray(step)\n  ) {\n    throw new Error(\n      `investigation_steps[${index}] must be an object`\n    );\n  }\n\n\n  if (\n    typeof step.step_id !== \"string\" ||\n    step.step_id.trim() === \"\"\n  ) {\n    throw new Error(\n      `investigation_steps[${index}].step_id is required`\n    );\n  }\n\n\n  if (\n    typeof step.tool !== \"string\" ||\n    step.tool.trim() === \"\"\n  ) {\n    throw new Error(\n      `investigation_steps[${index}].tool is required`\n    );\n  }\n\n\n  if (\n    typeof step.parameters !== \"object\" ||\n    step.parameters === null ||\n    Array.isArray(step.parameters)\n  ) {\n    throw new Error(\n      `investigation_steps[${index}].parameters must be an object`\n    );\n  }\n\n\n  // ----------------------------------------------\n  // Canonical tool request\n  // ----------------------------------------------\n\n  items.push({\n    json: {\n      request_version:\n        \"1.0\",\n\n      alert_id:\n        plan.alert_id,\n\n      step_id:\n        step.step_id,\n\n      tool:\n        step.tool,\n\n      parameters:\n        step.parameters,\n\n      context: {\n        priority:\n          step.priority || null,\n\n        purpose:\n          step.purpose || null,\n\n        evidence_target:\n          step.evidence_target || null\n      }\n    }\n  });\n}\n\n\n// --------------------------------------------------\n// 3. Return one n8n item per investigation step\n// --------------------------------------------------\n\nreturn items;"
+        "jsCode": "// ==================================================\n// Investigation Step Expander\n//\n// Converts one canonical investigation plan into\n// one n8n item per investigation step.\n//\n// The authoritative plan context required by the\n// downstream aggregator is propagated with every\n// expanded tool request.\n// ==================================================\n\nconst plan = $json;\n\n\n// --------------------------------------------------\n// 1. Validate plan\n// --------------------------------------------------\n\nif (\n  typeof plan !== \"object\" ||\n  plan === null ||\n  Array.isArray(plan)\n) {\n  throw new Error(\n    \"Investigation Step Expander received an invalid plan\"\n  );\n}\n\n\nif (\n  typeof plan.alert_id !== \"string\" ||\n  plan.alert_id.trim() === \"\"\n) {\n  throw new Error(\n    \"Investigation Step Expander requires alert_id\"\n  );\n}\n\n\nif (\n  !Array.isArray(\n    plan.investigation_steps\n  )\n) {\n  throw new Error(\n    \"Investigation Step Expander requires investigation_steps\"\n  );\n}\n\n\nif (\n  plan.investigation_steps.length === 0\n) {\n  throw new Error(\n    \"Investigation Step Expander received an empty investigation plan\"\n  );\n}\n\n\nconst requestedSteps =\n  plan.investigation_steps.length;\n\n\n// --------------------------------------------------\n// 2. Expand steps\n// --------------------------------------------------\n\nconst items = [];\n\nfor (\n  let index = 0;\n  index < plan.investigation_steps.length;\n  index++\n) {\n\n  const step =\n    plan.investigation_steps[index];\n\n\n  if (\n    typeof step !== \"object\" ||\n    step === null ||\n    Array.isArray(step)\n  ) {\n    throw new Error(\n      `investigation_steps[${index}] must be an object`\n    );\n  }\n\n\n  if (\n    typeof step.step_id !== \"string\" ||\n    step.step_id.trim() === \"\"\n  ) {\n    throw new Error(\n      `investigation_steps[${index}].step_id is required`\n    );\n  }\n\n\n  if (\n    typeof step.tool !== \"string\" ||\n    step.tool.trim() === \"\"\n  ) {\n    throw new Error(\n      `investigation_steps[${index}].tool is required`\n    );\n  }\n\n\n  if (\n    typeof step.parameters !== \"object\" ||\n    step.parameters === null ||\n    Array.isArray(step.parameters)\n  ) {\n    throw new Error(\n      `investigation_steps[${index}].parameters must be an object`\n    );\n  }\n\n\n  // ----------------------------------------------\n  // Canonical tool request\n  //\n  // plan_context is propagated so downstream\n  // aggregation does not depend on a specific\n  // upstream node name.\n  // ----------------------------------------------\n\n  items.push({\n    json: {\n      request_version:\n        \"1.0\",\n\n      alert_id:\n        plan.alert_id,\n\n      step_id:\n        step.step_id,\n\n      tool:\n        step.tool,\n\n      parameters:\n        step.parameters,\n\n      context: {\n        priority:\n          step.priority || null,\n\n        purpose:\n          step.purpose || null,\n\n        evidence_target:\n          step.evidence_target || null\n      },\n\n      plan_context: {\n        plan_version:\n          plan.plan_version || \"1.0\",\n\n        iteration_number:\n          Number.isInteger(plan.iteration_number)\n            ? plan.iteration_number\n            : null,\n\n        objective:\n          typeof plan.objective === \"string\"\n            ? plan.objective\n            : \"\",\n\n        requested_steps:\n          requestedSteps\n      }\n    }\n  });\n}\n\n\n// --------------------------------------------------\n// 3. Return one n8n item per investigation step\n// --------------------------------------------------\n\nreturn items;"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -55,7 +42,8 @@
             "step_id": "={{ $json.step_id }}",
             "tool": "={{ $json.tool }}",
             "parameters": "={{ $json.parameters }}",
-            "context": "={{ $json.context }}"
+            "context": "={{ $json.context }}",
+            "plan_context": "={{ $json.plan_context }}"
           },
           "matchingColumns": [],
           "schema": [
@@ -118,6 +106,16 @@
               "canBeUsedToMatch": true,
               "type": "object",
               "removed": false
+            },
+            {
+              "id": "plan_context",
+              "displayName": "plan_context",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object",
+              "removed": false
             }
           ],
           "attemptToConvertTypes": false,
@@ -137,7 +135,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ==================================================\n// Investigation Evidence Aggregator\n//\n// Aggregates canonical tool results produced by the\n// Tool Router into one investigation evidence object.\n//\n// Input:\n// multiple n8n items\n//\n// Output:\n// one canonical investigation evidence object\n// ==================================================\n\nconst items = $input.all();\n\n\n// --------------------------------------------------\n// 1. Retrieve original validated plan\n// --------------------------------------------------\n\nconst plan =\n  $(\"Validated Investigation Plan Input\").first().json;\n\n\n// --------------------------------------------------\n// 2. Basic validation\n// --------------------------------------------------\n\nif (\n  !plan ||\n  typeof plan !== \"object\" ||\n  Array.isArray(plan)\n) {\n  throw new Error(\n    \"Investigation Evidence Aggregator could not retrieve the validated investigation plan\"\n  );\n}\n\n\nif (\n  typeof plan.alert_id !== \"string\" ||\n  plan.alert_id.trim() === \"\"\n) {\n  throw new Error(\n    \"Investigation Evidence Aggregator requires alert_id\"\n  );\n}\n\n\n// --------------------------------------------------\n// 3. Aggregate tool executions\n// --------------------------------------------------\n\nconst toolExecutions = [];\n\nlet successfulTools = 0;\nlet partialTools = 0;\nlet failedTools = 0;\nlet rejectedTools = 0;\n\nlet totalEvidenceItems = 0;\n\n\n// --------------------------------------------------\n// 4. Process each Tool Router result\n// --------------------------------------------------\n\nfor (\n  let index = 0;\n  index < items.length;\n  index++\n) {\n\n  const result =\n    items[index].json;\n\n\n  // ----------------------------------------------\n  // Rejected tool request\n  // ----------------------------------------------\n\n  if (\n    result?.status === \"rejected\"\n  ) {\n\n    rejectedTools++;\n\n    toolExecutions.push({\n      execution_index:\n        index + 1,\n\n      tool:\n        result.request?.tool || null,\n\n      status:\n        \"rejected\",\n\n      query:\n        result.request?.parameters || null,\n\n      result_count:\n        0,\n\n      evidence:\n        [],\n\n      errors:\n        Array.isArray(result.errors)\n          ? result.errors\n          : []\n    });\n\n    continue;\n  }\n\n\n  // ----------------------------------------------\n  // Canonical tool result validation\n  // ----------------------------------------------\n\n  if (\n    !result ||\n    typeof result !== \"object\" ||\n    Array.isArray(result)\n  ) {\n    throw new Error(\n      `Tool result at index ${index} is invalid`\n    );\n  }\n\n\n  if (\n    typeof result.tool !== \"string\" ||\n    result.tool.trim() === \"\"\n  ) {\n    throw new Error(\n      `Tool result at index ${index} does not contain a valid tool name`\n    );\n  }\n\n\n  if (\n    !Array.isArray(result.evidence)\n  ) {\n    throw new Error(\n      `Tool result '${result.tool}' does not contain an evidence array`\n    );\n  }\n\n\n  // ----------------------------------------------\n  // Counters\n  // ----------------------------------------------\n\n  switch (result.status) {\n\n    case \"success\":\n      successfulTools++;\n      break;\n\n    case \"partial\":\n      partialTools++;\n      break;\n\n    case \"error\":\n      failedTools++;\n      break;\n\n    default:\n      throw new Error(\n        `Tool result '${result.tool}' contains unsupported status '${result.status}'`\n      );\n  }\n\n\n  totalEvidenceItems +=\n    result.evidence.length;\n\n\n  // ----------------------------------------------\n  // Store canonical execution\n  // ----------------------------------------------\n\n  toolExecutions.push({\n    execution_index:\n      index + 1,\n\n    tool:\n      result.tool,\n\n    tool_version:\n      result.tool_version || null,\n\n    status:\n      result.status,\n\n    query:\n      result.query || null,\n\n    result_count:\n      result.result_count ?? result.evidence.length,\n\n    evidence:\n      result.evidence,\n\n    error:\n      result.error || null\n  });\n}\n\n\n// --------------------------------------------------\n// 5. Overall investigation status\n// --------------------------------------------------\n\nlet investigationStatus =\n  \"success\";\n\n\nif (\n  failedTools > 0 ||\n  rejectedTools > 0 ||\n  partialTools > 0\n) {\n\n  if (\n    successfulTools > 0 ||\n    partialTools > 0\n  ) {\n    investigationStatus =\n      \"partial\";\n  } else {\n    investigationStatus =\n      \"failed\";\n  }\n}\n\n\n// --------------------------------------------------\n// 6. Canonical investigation evidence\n// --------------------------------------------------\n\nconst aggregatedEvidence = {\n\n  evidence_bundle_version:\n    \"1.0\",\n\n  alert_id:\n    plan.alert_id,\n\n  investigation_objective:\n    plan.objective || null,\n\n  status:\n    investigationStatus,\n\n  execution_summary: {\n    requested_steps:\n      Array.isArray(\n        plan.investigation_steps\n      )\n        ? plan.investigation_steps.length\n        : items.length,\n\n    executed_tools:\n      items.length,\n\n    successful_tools:\n      successfulTools,\n\n    partial_tools:\n      partialTools,\n\n    failed_tools:\n      failedTools,\n\n    rejected_tools:\n      rejectedTools,\n\n    total_evidence_items:\n      totalEvidenceItems\n  },\n\n  tool_executions:\n    toolExecutions\n};\n\n\n// --------------------------------------------------\n// 7. Return one aggregated item\n// --------------------------------------------------\n\nreturn [\n  {\n    json:\n      aggregatedEvidence\n  }\n];"
+        "jsCode": "// ==================================================\n// Investigation Evidence Aggregator\n//\n// Aggregates canonical tool execution results into\n// one Canonical Investigation Evidence Bundle.\n//\n// This version does not depend on a specific\n// upstream node name. Required investigation-plan\n// context must arrive with the tool result context.\n// ==================================================\n\n\n// --------------------------------------------------\n// 1. Read all tool execution results\n// --------------------------------------------------\n\nconst items =\n  $input.all();\n\n\nif (\n  !Array.isArray(items) ||\n  items.length === 0\n) {\n  throw new Error(\n    \"Investigation Evidence Aggregator received no tool results\"\n  );\n}\n\n\nconst results =\n  items.map(\n    item => item.json\n  );\n\n\n// --------------------------------------------------\n// 2. Recover authoritative plan context\n// --------------------------------------------------\n\nlet alertId = null;\nlet investigationObjective = \"\";\nlet requestedSteps = null;\nlet iterationNumber = null;\n\n\n// All results must refer to the same alert and\n// compatible propagated plan context.\n\nfor (\n  let index = 0;\n  index < results.length;\n  index++\n) {\n\n  const result =\n    results[index];\n\n\n  if (\n    !result ||\n    typeof result !== \"object\" ||\n    Array.isArray(result)\n  ) {\n    throw new Error(\n      `Tool result at execution ${index + 1} is not a valid object`\n    );\n  }\n\n\n  if (\n    typeof result.alert_id !== \"string\" ||\n    result.alert_id.trim() === \"\"\n  ) {\n    throw new Error(\n      `Tool result at execution ${index + 1} does not contain alert_id`\n    );\n  }\n\n\n  if (\n    alertId === null\n  ) {\n\n    alertId =\n      result.alert_id;\n\n  } else if (\n    alertId !== result.alert_id\n  ) {\n\n    throw new Error(\n      \"Investigation Evidence Aggregator received results from different alert_ids\"\n    );\n  }\n\n\n  const planContext =\n    (\n      result.plan_context &&\n      typeof result.plan_context === \"object\" &&\n      !Array.isArray(result.plan_context)\n    )\n      ? result.plan_context\n      : null;\n\n\n  if (planContext) {\n\n    if (\n      typeof planContext.objective === \"string\" &&\n      investigationObjective === \"\"\n    ) {\n      investigationObjective =\n        planContext.objective;\n    }\n\n\n    if (\n      Number.isInteger(\n        planContext.requested_steps\n      )\n    ) {\n\n      if (\n        requestedSteps === null\n      ) {\n\n        requestedSteps =\n          planContext.requested_steps;\n\n      } else if (\n        requestedSteps !==\n          planContext.requested_steps\n      ) {\n\n        throw new Error(\n          \"Investigation Evidence Aggregator received inconsistent requested_steps values\"\n        );\n      }\n    }\n\n\n    if (\n      Number.isInteger(\n        planContext.iteration_number\n      )\n    ) {\n\n      if (\n        iterationNumber === null\n      ) {\n\n        iterationNumber =\n          planContext.iteration_number;\n\n      } else if (\n        iterationNumber !==\n          planContext.iteration_number\n      ) {\n\n        throw new Error(\n          \"Investigation Evidence Aggregator received inconsistent iteration_number values\"\n        );\n      }\n    }\n  }\n}\n\n\n// --------------------------------------------------\n// 3. Fallback requested step count\n// --------------------------------------------------\n\nif (\n  requestedSteps === null\n) {\n  requestedSteps =\n    results.length;\n}\n\n\n// --------------------------------------------------\n// 4. Counters\n// --------------------------------------------------\n\nlet successfulTools = 0;\nlet partialTools = 0;\nlet failedTools = 0;\nlet rejectedTools = 0;\nlet totalEvidenceItems = 0;\n\n\n// --------------------------------------------------\n// 5. Normalize tool executions\n// --------------------------------------------------\n\nconst toolExecutions =\n  results.map(\n    (result, index) => {\n\n      const tool =\n        result.tool;\n\n\n      if (\n        typeof tool !== \"string\" ||\n        tool.trim() === \"\"\n      ) {\n        throw new Error(\n          `Tool result at execution ${index + 1} does not contain a valid tool`\n        );\n      }\n\n\n      const status =\n        result.status;\n\n\n      const validStatuses = [\n        \"success\",\n        \"partial\",\n        \"error\",\n        \"rejected\"\n      ];\n\n\n      if (\n        !validStatuses.includes(status)\n      ) {\n        throw new Error(\n          `Tool result '${tool}' contains invalid status '${status}'`\n        );\n      }\n\n\n      let evidence = [];\n\n\n      if (\n        status === \"success\" ||\n        status === \"partial\"\n      ) {\n\n        if (\n          !Array.isArray(\n            result.evidence\n          )\n        ) {\n          throw new Error(\n            `Tool result '${tool}' does not contain an evidence array`\n          );\n        }\n\n\n        evidence =\n          result.evidence;\n\n      } else {\n\n        evidence =\n          Array.isArray(\n            result.evidence\n          )\n            ? result.evidence\n            : [];\n      }\n\n\n      const resultCount =\n        Number.isInteger(\n          result.result_count\n        )\n          ? result.result_count\n          : evidence.length;\n\n\n      if (\n        resultCount !==\n        evidence.length\n      ) {\n        throw new Error(\n          `Tool result '${tool}' result_count does not match evidence.length`\n        );\n      }\n\n\n      const toolVersion =\n        (\n          typeof result.version === \"string\" &&\n          result.version.trim() !== \"\"\n        )\n          ? result.version\n          : (\n              typeof result.tool_version === \"string\" &&\n              result.tool_version.trim() !== \"\"\n            )\n              ? result.tool_version\n              : null;\n\n\n      if (\n        status === \"success\"\n      ) {\n        successfulTools++;\n      }\n\n\n      if (\n        status === \"partial\"\n      ) {\n        partialTools++;\n      }\n\n\n      if (\n        status === \"error\"\n      ) {\n        failedTools++;\n      }\n\n\n      if (\n        status === \"rejected\"\n      ) {\n        rejectedTools++;\n      }\n\n\n      totalEvidenceItems +=\n        evidence.length;\n\n\n      return {\n\n        execution_index:\n          index + 1,\n\n        step_id:\n          result.step_id || null,\n\n        tool,\n\n        tool_version:\n          toolVersion,\n\n        status,\n\n        query:\n          (\n            result.query &&\n            typeof result.query === \"object\" &&\n            !Array.isArray(result.query)\n          )\n            ? result.query\n            : {},\n\n        result_count:\n          resultCount,\n\n        evidence,\n\n        error:\n          result.error ?? null\n      };\n    }\n  );\n\n\n// --------------------------------------------------\n// 6. Determine bundle status\n// --------------------------------------------------\n\nlet bundleStatus =\n  \"success\";\n\n\nif (\n  failedTools > 0 ||\n  rejectedTools > 0\n) {\n\n  bundleStatus =\n    successfulTools > 0 ||\n    partialTools > 0\n      ? \"partial\"\n      : \"error\";\n\n} else if (\n  partialTools > 0\n) {\n\n  bundleStatus =\n    \"partial\";\n}\n\n\n// --------------------------------------------------\n// 7. Build Canonical Investigation Evidence Bundle\n// --------------------------------------------------\n\nreturn [\n  {\n    json: {\n\n      evidence_bundle_version:\n        \"1.0\",\n\n      alert_id:\n        alertId,\n\n      iteration_number:\n        iterationNumber,\n\n      investigation_objective:\n        investigationObjective,\n\n      status:\n        bundleStatus,\n\n      execution_summary: {\n\n        requested_steps:\n          requestedSteps,\n\n        executed_tools:\n          toolExecutions.length,\n\n        successful_tools:\n          successfulTools,\n\n        partial_tools:\n          partialTools,\n\n        failed_tools:\n          failedTools,\n\n        rejected_tools:\n          rejectedTools,\n\n        total_evidence_items:\n          totalEvidenceItems\n      },\n\n      tool_executions:\n        toolExecutions\n    }\n  }\n];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -147,6 +145,33 @@
       ],
       "id": "4d5c055b-0ce5-437a-a449-d1acf11ce2bc",
       "name": "Investigation Evidence Aggregator"
+    },
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"plan_version\": \"1.0\",\n  \"alert_id\": \"ALERT-0001\",\n  \"iteration_number\": 1,\n  \"objective\": \"Collect additional validated evidence.\",\n  \"investigation_steps\": [\n    {\n      \"step_id\": \"step-1\",\n      \"priority\": \"high\",\n      \"purpose\": \"Collect unresolved evidence.\",\n      \"tool\": \"get_ip_reputation\",\n      \"parameters\": {\n        \"ip\": \"185.220.101.20\"\n      },\n      \"evidence_target\": \"Threat intelligence and reputation information for the observed IP.\",\n      \"addresses_gap\": \"IP reputation analysis for the source IPs.\"\n    }\n  ],\n  \"unresolved_gaps\": []\n}"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -320,
+        320
+      ],
+      "id": "e1ac0eef-b447-4249-9206-eaa9f36ae250",
+      "name": "When Called by Investigation Workflow,"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==================================================\n// Validated Investigation Plan Input\n//\n// TEMPORARY ITERATIVE TEST:\n//\n// Executes the validated iterative investigation\n// plan using two get_ip_reputation steps.\n// ==================================================\n\nreturn [\n  {\n    json: {\n\n      plan_version:\n        \"1.0\",\n\n      alert_id:\n        \"ALERT-0001\",\n\n      objective:\n        \"Collect IP reputation evidence for the observed source IPs.\",\n\n      investigation_steps: [\n\n        {\n          step_id:\n            \"step-1\",\n\n          priority:\n            \"high\",\n\n          purpose:\n            \"Assess the reputation of the first observed source IP.\",\n\n          tool:\n            \"get_ip_reputation\",\n\n          parameters: {\n            ip:\n              \"185.220.101.20\"\n          },\n\n          evidence_target:\n            \"Threat intelligence and reputation information for the observed source IP.\"\n        },\n\n\n        {\n          step_id:\n            \"step-2\",\n\n          priority:\n            \"high\",\n\n          purpose:\n            \"Assess the reputation of the second observed source IP.\",\n\n          tool:\n            \"get_ip_reputation\",\n\n          parameters: {\n            ip:\n              \"91.198.174.20\"\n          },\n\n          evidence_target:\n            \"Threat intelligence and reputation information for the observed source IP.\"\n        }\n      ]\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -352,
+        0
+      ],
+      "id": "e4c31cb2-e0f2-4cc3-8dad-97a92d40aca7",
+      "name": "Manual Investigation Plan Test Input"
     }
   ],
   "pinData": {},
@@ -155,18 +180,7 @@
       "main": [
         [
           {
-            "node": "Validated Investigation Plan Input",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Validated Investigation Plan Input": {
-      "main": [
-        [
-          {
-            "node": "Investigation Step Expander",
+            "node": "Manual Investigation Plan Test Input",
             "type": "main",
             "index": 0
           }
@@ -194,15 +208,37 @@
           }
         ]
       ]
+    },
+    "When Called by Investigation Workflow,": {
+      "main": [
+        [
+          {
+            "node": "Investigation Step Expander",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Investigation Plan Test Input": {
+      "main": [
+        [
+          {
+            "node": "Investigation Step Expander",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate",
     "availableInMCP": false
   },
-  "versionId": "d6bc0f24-fe07-4516-b040-3c7723eecbd4",
+  "versionId": "fa66a9b3-97f7-4fa2-8bff-477fc0e38b55",
   "meta": {
     "instanceId": "b2d82f9ccdb8bc424a72b8529b63d9b32a1170e9eed34f0a8c38afe810fb7c9d"
   },

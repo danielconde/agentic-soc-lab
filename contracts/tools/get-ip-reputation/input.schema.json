@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-soc-lab.local/contracts/tools/get-ip-reputation/input.schema.json",
+  "title": "get_ip_reputation Input",
+  "description": "Canonical input contract for IP reputation investigation requests.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ip"
+  ],
+  "properties": {
+    "ip": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 45,
+      "description": "Observed IPv4 or IPv6 address to investigate."
+    }
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-soc-lab.local/contracts/tools/get-ip-reputation/output.schema.json",
+  "title": "get_ip_reputation Output",
+  "description": "Canonical normalized output returned by the get_ip_reputation tool.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tool",
+    "version",
+    "status",
+    "query",
+    "result_count",
+    "results",
+    "error"
+  ],
+  "properties": {
+    "tool": {
+      "const": "get_ip_reputation"
+    },
+    "version": {
+      "const": "1.0"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "success",
+        "partial",
+        "error"
+      ]
+    },
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ip"
+      ],
+      "properties": {
+        "ip": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "result_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ip",
+          "classification",
+          "reputation_score",
+          "confidence",
+          "provider",
+          "categories",
+          "last_seen",
+          "details"
+        ],
+        "properties": {
+          "ip": {
+            "type": "string"
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "benign",
+              "suspicious",
+              "malicious",
+              "unknown"
+            ]
+          },
+          "reputation_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "provider": {
+            "type": "string",
+            "minLength": 1
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "last_seen": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    "error": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
