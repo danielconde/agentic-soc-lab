@@ -113,7 +113,13 @@ La guía completa está disponible en:
 
 8. [`docs/08-evidence-based-investigation.md`](docs/08-evidence-based-investigation.md)  
    Análisis basado en evidencias, validación determinista, repair de assessments y planes, orquestación iterativa, ejecución real de tools, capability evaluation y finalización controlada.
-   
+
+9. [`docs/09-response-planning-approval.md`](docs/09-response-planning-approval.md)  
+   Response planning, validación determinista, response policy, aprobación humana, protección del scope y autorización previa a ejecución.
+
+10. [`docs/10-response-execution.md`](docs/10-response-execution.md)  
+    Ejecución de respuesta mock, idempotencia intra-run, retries controlados, estados terminales, agregación y auditoría.
+
 ## Roadmap técnico
 
 ```text
